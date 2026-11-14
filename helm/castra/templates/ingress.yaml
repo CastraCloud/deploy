@@ -1,0 +1,79 @@
+{{- if .Values.ingress.enabled }}
+{{- $full := include "castra.fullname" . -}}
+{{- $tls := .Values.ingress.tls -}}
+{{- $host := required "ingress.host is required when the ingress is enabled" .Values.ingress.host -}}
+{{- $drawioHost := ternary .Values.drawio.host "" (eq .Values.drawio.mode "bundled") -}}
+{{- $secretName := "" -}}
+{{- if eq $tls.mode "existingSecret" -}}
+{{- $secretName = required "ingress.tls.secretName is required when ingress.tls.mode is existingSecret" $tls.secretName -}}
+{{- else if eq $tls.mode "certManager" -}}
+{{- $secretName = default (printf "%s-tls" $full) $tls.secretName -}}
+{{- end -}}
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: {{ $full }}
+  labels:
+    {{- include "castra.labels" . | nindent 4 }}
+  annotations:
+    {{- if eq .Values.ingress.preset "nginx" }}
+    # Live editing (/collab) is a long-lived WebSocket: nginx closes idle connections after 60 seconds by default.
+    nginx.ingress.kubernetes.io/proxy-read-timeout: "3600"
+    nginx.ingress.kubernetes.io/proxy-send-timeout: "3600"
+    nginx.ingress.kubernetes.io/proxy-body-size: {{ .Values.ingress.maxBodySize | quote }}
+    {{- else if eq .Values.ingress.preset "traefik" }}
+    {{- if ne $tls.mode "none" }}
+    traefik.ingress.kubernetes.io/router.entrypoints: {{ .Values.ingress.traefikEntryPoints | quote }}
+    traefik.ingress.kubernetes.io/router.tls: "true"
+    {{- end }}
+    {{- end }}
+    {{- if eq $tls.mode "certManager" }}
+    {{- if eq $tls.issuer.kind "Issuer" }}
+    cert-manager.io/issuer: {{ required "ingress.tls.issuer.name is required for cert-manager" $tls.issuer.name | quote }}
+    {{- else }}
+    cert-manager.io/cluster-issuer: {{ required "ingress.tls.issuer.name is required for cert-manager" $tls.issuer.name | quote }}
+    {{- end }}
+    {{- range $k, $val := $tls.issuer.annotations }}
+    {{ $k }}: {{ $val | quote }}
+    {{- end }}
+    {{- end }}
+    {{- range $k, $val := .Values.ingress.annotations }}
+    {{ $k }}: {{ $val | quote }}
+    {{- end }}
+spec:
+  {{- with .Values.ingress.className }}
+  ingressClassName: {{ . }}
+  {{- end }}
+  {{- if $secretName }}
+  tls:
+    - hosts:
+        - {{ $host | quote }}
+        {{- if $drawioHost }}
+        - {{ $drawioHost | quote }}
+        {{- end }}
+      secretName: {{ $secretName }}
+  {{- end }}
+  rules:
+    - host: {{ $host | quote }}
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: {{ $full }}-web
+                port:
+                  name: http
+    {{- if $drawioHost }}
+    - host: {{ $drawioHost | quote }}
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: {{ $full }}-web
+                port:
+                  name: drawio
+    {{- end }}
+{{- end }}

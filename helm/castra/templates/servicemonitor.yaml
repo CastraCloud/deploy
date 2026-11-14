@@ -1,0 +1,35 @@
+{{- if and .Values.metrics.enabled .Values.metrics.serviceMonitor.enabled }}
+{{- $sm := .Values.metrics.serviceMonitor -}}
+{{- $tokenName := ternary .Values.metrics.token.existingSecret (include "castra.secretName" .) (ne .Values.metrics.token.existingSecret "") -}}
+{{- $tokenKey := ternary (default "metrics-token" .Values.metrics.token.key) "metrics-token" (ne .Values.metrics.token.existingSecret "") -}}
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: {{ include "castra.fullname" . }}
+  {{- with $sm.namespace }}
+  namespace: {{ . }}
+  {{- end }}
+  labels:
+    {{- include "castra.labels" . | nindent 4 }}
+    {{- with $sm.labels }}
+    {{- toYaml . | nindent 4 }}
+    {{- end }}
+spec:
+  namespaceSelector:
+    matchNames:
+      - {{ .Release.Namespace }}
+  selector:
+    matchLabels:
+      app.kubernetes.io/instance: {{ .Release.Name }}
+      castracloud.com/role-service: "true"
+  endpoints:
+    - port: http
+      path: /metrics
+      interval: {{ $sm.interval }}
+      scrapeTimeout: {{ $sm.scrapeTimeout }}
+      authorization:
+        type: Bearer
+        credentials:
+          name: {{ $tokenName }}
+          key: {{ $tokenKey }}
+{{- end }}

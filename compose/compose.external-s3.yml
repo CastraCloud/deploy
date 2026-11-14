@@ -1,0 +1,7 @@
+# Use your own S3-compatible bucket instead of the bundled SeaweedFS. Add it after compose.yml. Set S3_ENDPOINT,
+# S3_REGION, S3_BUCKET, S3_ACCESS_KEY, S3_SECRET_KEY and (for most non-AWS stores) S3_FORCE_PATH_STYLE=true in
+# .env. On AWS with an instance or task role, set S3_CREDENTIALS=aws-default and leave out the two keys. Create the bucket first. The bundled seaweedfs service is switched off. backup.sh then cannot copy
+# the objects: use BACKUP_OBJECTS=none or rclone, or your provider's own versioning and replication.
+services:
+  seaweedfs:
+    profiles: [bundled-seaweedfs-off]

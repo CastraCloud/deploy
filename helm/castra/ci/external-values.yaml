@@ -1,0 +1,75 @@
+# Every dependency outside the chart.
+mode: minimal
+publicUrl: https://castra.example.com
+signIn:
+  oidc:
+    issuer: https://idp.example.com/realms/castra
+    clientId: castra
+    clientSecret:
+      existingSecret: castra-oidc
+  session:
+    secret:
+      existingSecret: castra-session
+database:
+  mode: external
+  external:
+    host: db.example.com
+    params: "?sslmode=require"
+  ownerPassword:
+    existingSecret: castra-db
+    key: owner
+  appPassword:
+    existingSecret: castra-db
+    key: app
+valkey:
+  mode: external
+  external:
+    url:
+      existingSecret: castra-valkey
+      key: url
+storage:
+  mode: external
+  external:
+    endpoint: https://s3.example.com
+  forcePathStyle: "true"
+  accessKey:
+    existingSecret: castra-s3
+    key: access
+  secretKey:
+    existingSecret: castra-s3
+    key: secret
+drawio:
+  mode: external
+  external:
+    url: https://drawio.example.com
+events:
+  transport: nats
+nats:
+  mode: external
+  url: nats://nats.example.com:4222
+backup:
+  enabled: true
+  target: s3
+  s3:
+    bucket: castra-backups
+    endpoint: https://s3.example.com
+    accessKey:
+      existingSecret: castra-backup
+      key: access
+    secretKey:
+      existingSecret: castra-backup
+      key: secret
+  database:
+    user: castra_backup
+    password:
+      existingSecret: castra-backup
+      key: dbpassword
+gateway:
+  enabled: true
+  parentRefs:
+    - name: shared
+      namespace: gateway-system
+  hostnames:
+    - castra.example.com
+  timeouts:
+    request: 3600s

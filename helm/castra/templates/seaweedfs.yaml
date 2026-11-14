@@ -1,0 +1,99 @@
+{{- if eq .Values.storage.mode "bundled" }}
+{{- $full := include "castra.fullname" . -}}
+{{- $v := .Values.storage -}}
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ $full }}-seaweedfs
+  labels:
+    {{- include "castra.labels" . | nindent 4 }}
+    app.kubernetes.io/component: seaweedfs
+spec:
+  type: ClusterIP
+  ports:
+    - name: s3
+      port: 8333
+      targetPort: s3
+  selector:
+    {{- include "castra.selector" (dict "root" . "component" "seaweedfs") | nindent 4 }}
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: {{ $full }}-seaweedfs
+  labels:
+    {{- include "castra.labels" . | nindent 4 }}
+    app.kubernetes.io/component: seaweedfs
+spec:
+  serviceName: {{ $full }}-seaweedfs
+  replicas: 1
+  selector:
+    matchLabels:
+      {{- include "castra.selector" (dict "root" . "component" "seaweedfs") | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "castra.labels" . | nindent 8 }}
+        app.kubernetes.io/component: seaweedfs
+      {{- with .Values.podAnnotations }}
+      annotations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+    spec:
+      automountServiceAccountToken: false
+      {{- include "castra.pullSecrets" . | nindent 6 }}
+      securityContext:
+        {{- toYaml (omit $v.bundled.securityContext "allowPrivilegeEscalation" "capabilities") | nindent 8 }}
+      containers:
+        - name: seaweedfs
+          image: {{ $v.bundled.image | quote }}
+          args:
+            - server
+            - -dir=/data
+            - -s3
+            - -s3.port=8333
+            - -ip.bind=0.0.0.0
+            - -master.volumeSizeLimitMB={{ include "castra.str" $v.bundled.volumeSizeLimitMB }}
+          env:
+            - name: AWS_ACCESS_KEY_ID
+              {{- include "castra.sref" (dict "root" . "cfg" $v.accessKey "k" "s3-access-key" "hook" false) | nindent 14 }}
+            - name: AWS_SECRET_ACCESS_KEY
+              {{- include "castra.sref" (dict "root" . "cfg" $v.secretKey "k" "s3-secret-key" "hook" false) | nindent 14 }}
+          ports:
+            - name: s3
+              containerPort: 8333
+            - name: master
+              containerPort: 9333
+          readinessProbe:
+            httpGet:
+              path: /cluster/status
+              port: master
+            periodSeconds: 10
+            timeoutSeconds: 3
+          livenessProbe:
+            httpGet:
+              path: /cluster/status
+              port: master
+            periodSeconds: 20
+            timeoutSeconds: 3
+            failureThreshold: 6
+          resources:
+            {{- toYaml $v.bundled.resources | nindent 12 }}
+          securityContext:
+            {{- toYaml (pick $v.bundled.securityContext "allowPrivilegeEscalation" "capabilities") | nindent 12 }}
+          volumeMounts:
+            - name: data
+              mountPath: /data
+      {{- include "castra.scheduling" . | nindent 6 }}
+  volumeClaimTemplates:
+    - metadata:
+        name: data
+      spec:
+        accessModes: [ReadWriteOnce]
+        {{- with $v.bundled.storage.storageClass }}
+        storageClassName: {{ . | quote }}
+        {{- end }}
+        resources:
+          requests:
+            storage: {{ $v.bundled.storage.size }}
+{{- end }}

@@ -1,0 +1,15 @@
+# cert-manager with a namespaced Issuer (for example an internal ACME CA such as Vault or step-ca).
+secrets:
+  generate: true
+ingress:
+  enabled: true
+  className: nginx
+  host: castra.corp.example
+  preset: nginx
+  tls:
+    mode: certManager
+    issuer:
+      kind: Issuer
+      name: internal-acme
+drawio:
+  mode: none

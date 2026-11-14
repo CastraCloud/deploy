@@ -1,0 +1,48 @@
+# Use your own Postgres 17 or newer instead of the bundled one. Add it after compose.yml. Set CASTRA_DB_HOST,
+# CASTRA_DB_PORT, CASTRA_DB_PARAMS (for example ?sslmode=require) and POSTGRES_DB in .env, and create the two
+# roles with postgres/roles.sql (see the README). The bundled postgres service is switched off. Backup and
+# restore with backup.sh then do not apply: back up your database with its own tools.
+# Needs Docker Compose 2.24 or newer (for !reset). Each service is written out: Compose 2.40 ignores !reset
+# when it comes through a YAML alias.
+services:
+  postgres:
+    profiles: [bundled-postgres-off]
+  migrate:
+    depends_on:
+      postgres: !reset null
+  app:
+    depends_on:
+      postgres: !reset null
+  api:
+    depends_on:
+      postgres: !reset null
+  collab:
+    depends_on:
+      postgres: !reset null
+  realtime:
+    depends_on:
+      postgres: !reset null
+  worker-jobs:
+    depends_on:
+      postgres: !reset null
+  worker-sla:
+    depends_on:
+      postgres: !reset null
+  mail-in:
+    depends_on:
+      postgres: !reset null
+  mail-out:
+    depends_on:
+      postgres: !reset null
+  idp-sync:
+    depends_on:
+      postgres: !reset null
+  indexer:
+    depends_on:
+      postgres: !reset null
+  preview:
+    depends_on:
+      postgres: !reset null
+  seed-demo:
+    depends_on:
+      postgres: !reset null

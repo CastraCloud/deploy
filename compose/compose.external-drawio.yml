@@ -1,0 +1,6 @@
+# Use a Draw.io you already run instead of the bundled one. Add it after compose.yml and set DRAWIO_URL in .env
+# to its address (an https address the browser can reach), and CASTRA_FRAME_SRC to its origin. The bundled
+# drawio service is switched off.
+services:
+  drawio:
+    profiles: [bundled-drawio-off]

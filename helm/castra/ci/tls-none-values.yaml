@@ -1,0 +1,15 @@
+# An Ingress with no TLS (behind a load balancer that ends it), Traefik preset.
+secrets:
+  generate: true
+ingress:
+  enabled: true
+  host: castra.example.com
+  preset: traefik
+drawio:
+  host: drawio.example.com
+demo:
+  enabled: true
+  seedJob: true
+signIn:
+  session:
+    cookieSecure: "false"

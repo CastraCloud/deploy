@@ -1,0 +1,337 @@
+# Minimal: docker compose -f compose/compose.yml --env-file compose/.env --profile minimal up -d
+# Full:    docker compose -f compose/compose.yml --env-file compose/.env --profile full up -d
+# Add --profile dev for Keycloak and Mailpit. Use minimal or full, not both.
+# install.sh and compose/castra.sh pick the files and profiles for you.
+name: castra
+
+x-server: &server
+  image: ${CASTRA_IMAGE_SERVER:-ghcr.io/castracloud/castra-server:${CASTRA_VERSION:?set CASTRA_VERSION in .env, for example 1.0.0}}
+  restart: unless-stopped
+  depends_on:
+    migrate:
+      condition: service_completed_successfully
+    postgres:
+      condition: service_healthy
+
+x-server-env: &server-env # Every role except migrate connects as castra_app, which cannot bypass row-level security.
+  DATABASE_URL: postgres://castra_app:${CASTRA_DB_APP_PASSWORD:?set CASTRA_DB_APP_PASSWORD in .env}@${CASTRA_DB_HOST:-postgres}:${CASTRA_DB_PORT:-5432}/${POSTGRES_DB:-castra}${CASTRA_DB_PARAMS:-}
+  OIDC_ISSUER: ${OIDC_ISSUER:-}
+  OIDC_CLIENT_ID: ${OIDC_CLIENT_ID:-}
+  OIDC_CLIENT_SECRET: ${OIDC_CLIENT_SECRET:-}
+  OIDC_REDIRECT_URI: ${OIDC_REDIRECT_URI:-}
+  OIDC_USERNAME_CLAIM: ${OIDC_USERNAME_CLAIM:-preferred_username}
+  OIDC_GROUPS_CLAIM: ${OIDC_GROUPS_CLAIM:-groups}
+  OIDC_GROUP_PREFIX_FILTER: ${OIDC_GROUP_PREFIX_FILTER:-}
+  OIDC_REQUIRED_GROUPS: ${OIDC_REQUIRED_GROUPS:-}
+  CASTRA_BOOTSTRAP_ORG_NAME: ${CASTRA_BOOTSTRAP_ORG_NAME:-}
+  CASTRA_BOOTSTRAP_ORG_SLUG: ${CASTRA_BOOTSTRAP_ORG_SLUG:-}
+  CASTRA_BOOTSTRAP_ADMINS: ${CASTRA_BOOTSTRAP_ADMINS:-}
+  CASTRA_BOOTSTRAP_JOIN_POLICY: ${CASTRA_BOOTSTRAP_JOIN_POLICY:-same_issuer}
+  CASTRA_DEMO: ${CASTRA_DEMO:-}
+  # Identity sources from a file (see "Identity sources" in the README). The file is mounted into migrate only.
+  CASTRA_IDENTITY_CONFIG: ${CASTRA_IDENTITY_CONFIG:-}
+  IDENTITY_SECRET_1: ${IDENTITY_SECRET_1:-}
+  IDENTITY_SECRET_2: ${IDENTITY_SECRET_2:-}
+  IDENTITY_SECRET_3: ${IDENTITY_SECRET_3:-}
+  SESSION_SECRET: ${SESSION_SECRET:-}
+  SESSION_COOKIE_SECURE: ${SESSION_COOKIE_SECURE:-}
+  NATS_URL: nats://nats:4222
+  # outbox: workers read events straight from Postgres. nats: the relay publishes them to JetStream.
+  CASTRA_EVENT_TRANSPORT: ${CASTRA_EVENT_TRANSPORT:-outbox}
+  CASTRA_PUBLIC_URL: ${CASTRA_PUBLIC_URL:-}
+  CASTRA_HSTS: ${CASTRA_HSTS:-}
+  RATE_LIMIT_ENABLED: ${RATE_LIMIT_ENABLED:-}
+  RATE_LIMIT_MAX: ${RATE_LIMIT_MAX:-1200}
+  RATE_LIMIT_AUTH_MAX: ${RATE_LIMIT_AUTH_MAX:-30}
+  RATE_LIMIT_WINDOW_SECONDS: ${RATE_LIMIT_WINDOW_SECONDS:-60}
+  RATE_LIMIT_TOKEN_MAX: ${RATE_LIMIT_TOKEN_MAX:-600}
+  STATUS_RATE_LIMIT_PER_MINUTE: ${STATUS_RATE_LIMIT_PER_MINUTE:-120}
+  STATUS_SUBSCRIBE_PER_HOUR: ${STATUS_SUBSCRIBE_PER_HOUR:-10}
+  STATUS_CACHE_SECONDS: ${STATUS_CACHE_SECONDS:-30}
+  API_TOKEN_MAX_DAYS: ${API_TOKEN_MAX_DAYS:-365}
+  WEBHOOK_ALLOW_PRIVATE_CIDRS: ${WEBHOOK_ALLOW_PRIVATE_CIDRS:-}
+  IMPORT_ALLOW_PRIVATE_CIDRS: ${IMPORT_ALLOW_PRIVATE_CIDRS:-}
+  WEBHOOK_DISABLE_AFTER: ${WEBHOOK_DISABLE_AFTER:-10}
+  AUTOMATION_MAX_RUNS_PER_HOUR: ${AUTOMATION_MAX_RUNS_PER_HOUR:-600}
+  WEBHOOK_ENCRYPTION_KEY: ${WEBHOOK_ENCRYPTION_KEY:-}
+  METRICS_ENABLED: ${METRICS_ENABLED:-}
+  METRICS_TOKEN: ${METRICS_TOKEN:-}
+  SMTP_HOST: ${SMTP_HOST:-}
+  SMTP_PORT: ${SMTP_PORT:-}
+  SMTP_USER: ${SMTP_USER:-}
+  SMTP_PASSWORD: ${SMTP_PASSWORD:-}
+  SMTP_FROM: ${SMTP_FROM:-}
+  SMTP_TLS: ${SMTP_TLS:-starttls}
+  WEB_PUSH_PUBLIC_KEY: ${WEB_PUSH_PUBLIC_KEY:-}
+  WEB_PUSH_PRIVATE_KEY: ${WEB_PUSH_PRIVATE_KEY:-}
+  WEB_PUSH_CONTACT: ${WEB_PUSH_CONTACT:-}
+  SEARCH_EXPORT_MAX_ROWS: ${SEARCH_EXPORT_MAX_ROWS:-5000}
+  MAIL_DIGEST_WINDOW_SECONDS: ${MAIL_DIGEST_WINDOW_SECONDS:-120}
+  MAIL_MAX_ATTEMPTS: ${MAIL_MAX_ATTEMPTS:-6}
+  MAIL_REPLY_DOMAIN: ${MAIL_REPLY_DOMAIN:-}
+  MAIL_TOKEN_SECRET: ${MAIL_TOKEN_SECRET:-}
+  MAIL_REPLY_TOKEN_DAYS: ${MAIL_REPLY_TOKEN_DAYS:-30}
+  MAIL_IN_WEBHOOK_SECRET: ${MAIL_IN_WEBHOOK_SECRET:-}
+  MAIL_IN_IMAP_URL: ${MAIL_IN_IMAP_URL:-}
+  MAIL_IN_IMAP_USER: ${MAIL_IN_IMAP_USER:-}
+  MAIL_IN_IMAP_PASSWORD: ${MAIL_IN_IMAP_PASSWORD:-}
+  MAIL_IN_IMAP_FOLDER: ${MAIL_IN_IMAP_FOLDER:-INBOX}
+  MAIL_IN_POLL_SECONDS: ${MAIL_IN_POLL_SECONDS:-60}
+  MAIL_IN_MAX_BYTES: ${MAIL_IN_MAX_BYTES:-10485760}
+  MAIL_IN_RATE_PER_SENDER: ${MAIL_IN_RATE_PER_SENDER:-20}
+  MAIL_IN_RATE_PER_PROJECT: ${MAIL_IN_RATE_PER_PROJECT:-200}
+  MAIL_IN_TRUSTED_AUTHSERV: ${MAIL_IN_TRUSTED_AUTHSERV:-}
+  MAIL_IN_REQUIRE_DMARC_PASS: ${MAIL_IN_REQUIRE_DMARC_PASS:-}
+  VALKEY_URL: ${VALKEY_URL:-redis://valkey:6379}
+  S3_ENDPOINT: ${S3_ENDPOINT:-http://seaweedfs:8333}
+  S3_REGION: ${S3_REGION:-us-east-1}
+  S3_BUCKET: ${S3_BUCKET:-castra}
+  S3_CREDENTIALS: ${S3_CREDENTIALS:-keys}
+  S3_ACCESS_KEY: ${S3_ACCESS_KEY:-}
+  S3_SECRET_KEY: ${S3_SECRET_KEY:-}
+  S3_FORCE_PATH_STYLE: ${S3_FORCE_PATH_STYLE:-}
+  ATTACHMENT_MAX_BYTES: ${ATTACHMENT_MAX_BYTES:-26214400}
+  DRAWIO_URL: ${DRAWIO_URL:-${CASTRA_DRAWIO_DOMAIN:+https://${CASTRA_DRAWIO_DOMAIN}}}
+  LOG_LEVEL: ${LOG_LEVEL:-info}
+
+x-role: &role
+  <<: *server
+  profiles: [full]
+
+services:
+  postgres:
+    image: postgres:17.6-bookworm
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-castra}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}
+      POSTGRES_DB: ${POSTGRES_DB:-castra}
+      CASTRA_DB_OWNER_PASSWORD: ${CASTRA_DB_OWNER_PASSWORD:?set CASTRA_DB_OWNER_PASSWORD in .env}
+      CASTRA_DB_APP_PASSWORD: ${CASTRA_DB_APP_PASSWORD:?set CASTRA_DB_APP_PASSWORD in .env}
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+      # Creates castra_owner and castra_app on the first start of an empty volume.
+      - ./postgres/init:/docker-entrypoint-initdb.d:ro
+      - ./postgres/roles.sql:/castra/roles.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  # Only needed when CASTRA_EVENT_TRANSPORT=nats: add --profile nats.
+  nats:
+    image: nats:2.11.8-alpine
+    profiles: [nats]
+    restart: unless-stopped
+    command: ["-js", "-sd", "/data", "-m", "8222"]
+    volumes:
+      - nats-data:/data
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:8222/healthz || exit 1"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  valkey:
+    image: valkey/valkey:8.1.3-alpine
+    restart: unless-stopped
+    command: ["valkey-server", "--appendonly", "yes"]
+    volumes:
+      - valkey-data:/data
+    healthcheck:
+      test: ["CMD", "valkey-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  seaweedfs:
+    image: chrislusf/seaweedfs:3.97
+    restart: unless-stopped
+    # Each storage volume reserves its full size on disk up front, so keep them small by default.
+    command:
+      [
+        "server",
+        "-dir=/data",
+        "-s3",
+        "-s3.port=8333",
+        "-ip.bind=0.0.0.0",
+        "-master.volumeSizeLimitMB=${SEAWEEDFS_VOLUME_SIZE_MB:-256}",
+      ]
+    environment:
+      AWS_ACCESS_KEY_ID: ${S3_ACCESS_KEY:-}
+      AWS_SECRET_ACCESS_KEY: ${S3_SECRET_KEY:-}
+    volumes:
+      - seaweedfs-data:/data
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:9333/cluster/status || exit 1"]
+      interval: 10s
+      timeout: 3s
+      retries: 20
+
+  migrate:
+    <<: *server
+    restart: "no"
+    # The identity file is read here, once per deploy. With no file set, /dev/null stands in and is ignored.
+    volumes:
+      - ${CASTRA_IDENTITY_FILE:-/dev/null}:/etc/castra/identity.yaml:ro
+    environment:
+      <<: *server-env
+      CASTRA_ROLE: migrate
+      # Only migrate connects as the schema owner.
+      DATABASE_URL: postgres://castra_owner:${CASTRA_DB_OWNER_PASSWORD:?set CASTRA_DB_OWNER_PASSWORD in .env}@${CASTRA_DB_HOST:-postgres}:${CASTRA_DB_PORT:-5432}/${POSTGRES_DB:-castra}${CASTRA_DB_PARAMS:-}
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  # Sample data for testing, run on demand and safe to repeat. It refuses unless CASTRA_DEMO=true.
+  #   docker compose -f compose/compose.yml --env-file compose/.env --profile seed-demo run --rm seed-demo
+  seed-demo:
+    <<: *server
+    restart: "no"
+    profiles: [seed-demo]
+    environment: { <<: *server-env, CASTRA_ROLE: seed-demo }
+
+  # Minimal profile: every role in one process. Aliased as "api" and "collab" so the web proxy needs no change.
+  app:
+    <<: *server
+    profiles: [minimal]
+    environment:
+      <<: *server-env
+      CASTRA_ROLE: all-in-one
+    networks:
+      default:
+        aliases: [api, collab, mail-in]
+
+  web:
+    image: ${CASTRA_IMAGE_WEB:-ghcr.io/castracloud/castra-web:${CASTRA_VERSION:?set CASTRA_VERSION in .env, for example 1.0.0}}
+    restart: unless-stopped
+    ports:
+      # CASTRA_HTTP_BIND=127.0.0.1 keeps Castra off the network when a proxy on the same host fronts it.
+      - "${CASTRA_HTTP_BIND:-0.0.0.0}:${CASTRA_HTTP_PORT:-8080}:80"
+      # Draw.io on its own port, so the editor has its own origin (see "Diagrams" in the README). With
+      # CASTRA_DRAWIO_DOMAIN set it is served on that name instead and nothing listens here: set CASTRA_DRAWIO_BIND=127.0.0.1.
+      - "${CASTRA_DRAWIO_BIND:-${CASTRA_HTTP_BIND:-0.0.0.0}}:${CASTRA_DRAWIO_PORT:-8081}:${CASTRA_DRAWIO_PORT:-8081}"
+    environment:
+      CASTRA_DRAWIO_PORT: ${CASTRA_DRAWIO_PORT:-8081}
+      # Host form: Draw.io on its own host name on the same listener as Castra (plain http here; compose.tls.yml
+      # sets the bare name). Empty: the port form above.
+      CASTRA_DRAWIO_SUFFIX: ${CASTRA_DRAWIO_DOMAIN:+-host}
+      CASTRA_DRAWIO_SITE: ${CASTRA_DRAWIO_DOMAIN:+http://${CASTRA_DRAWIO_DOMAIN}}
+      DRAWIO_UPSTREAM: drawio:8080
+      API_UPSTREAM: api:8080
+      COLLAB_UPSTREAM: collab:8080
+      MAIL_IN_UPSTREAM: mail-in:8080
+      # 'self' plus the Draw.io address; CASTRA_FRAME_SRC replaces the address and can add other sites.
+      # A bare host name matches the scheme the page uses.
+      FRAME_SRC: ${CASTRA_FRAME_SRC:-${DRAWIO_URL:-${CASTRA_DRAWIO_DOMAIN:-}}}
+      CASTRA_TRUSTED_PROXIES: ${CASTRA_TRUSTED_PROXIES:-}
+      IDP_UPSTREAM: idp:8080
+
+  api:
+    <<: *role
+    environment: { <<: *server-env, CASTRA_ROLE: api }
+  collab:
+    <<: *role
+    environment: { <<: *server-env, CASTRA_ROLE: collab }
+  realtime:
+    <<: *role
+    environment: { <<: *server-env, CASTRA_ROLE: realtime }
+  worker-jobs:
+    <<: *role
+    environment: { <<: *server-env, CASTRA_ROLE: worker-jobs }
+  worker-sla:
+    <<: *role
+    environment: { <<: *server-env, CASTRA_ROLE: worker-sla }
+  mail-in:
+    <<: *role
+    environment: { <<: *server-env, CASTRA_ROLE: mail-in }
+  mail-out:
+    <<: *role
+    environment: { <<: *server-env, CASTRA_ROLE: mail-out }
+  idp-sync:
+    <<: *role
+    environment: { <<: *server-env, CASTRA_ROLE: idp-sync }
+  indexer:
+    <<: *role
+    environment: { <<: *server-env, CASTRA_ROLE: indexer }
+  preview:
+    <<: *role
+    environment: { <<: *server-env, CASTRA_ROLE: preview }
+
+  # Draw.io, so diagrams in Caelus pages can be edited without the browser reaching the internet. The web
+  # proxy serves it on CASTRA_DRAWIO_DOMAIN, or on CASTRA_DRAWIO_PORT when that is empty; install.sh sets DRAWIO_URL. It is the official
+  # image, unchanged. DRAWIO_SELF_CONTAINED asks it not to call outside services; older images ignore it.
+  drawio:
+    image: jgraph/drawio:32.6.10
+    restart: unless-stopped
+    environment:
+      DRAWIO_SELF_CONTAINED: "1"
+
+  # The bundled identity provider, for installs without one: Keycloak in production mode, served by the
+  # web proxy at <CASTRA_PUBLIC_URL>/idp, with its own database (keycloak) in the bundled Postgres.
+  # Add --profile identity. Its realm has the Castra client and no users: see "Bundled sign-in" in the README.
+  idp-db-init:
+    image: postgres:17.6-bookworm
+    profiles: [identity]
+    restart: "no"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      PGHOST: postgres
+      PGUSER: ${POSTGRES_USER:-castra}
+      PGPASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}
+      PGDATABASE: ${POSTGRES_DB:-castra}
+      KEYCLOAK_DB_PASSWORD: ${KEYCLOAK_DB_PASSWORD:-}
+      OIDC_CLIENT_SECRET: ${OIDC_CLIENT_SECRET:-}
+    volumes:
+      - ./postgres/idp-db.sh:/castra/idp-db.sh:ro
+    command: ["sh", "/castra/idp-db.sh"]
+
+  idp:
+    image: quay.io/keycloak/keycloak:26.3.3
+    profiles: [identity]
+    restart: unless-stopped
+    command: ["start", "--import-realm"]
+    depends_on:
+      idp-db-init:
+        condition: service_completed_successfully
+    environment:
+      KC_BOOTSTRAP_ADMIN_USERNAME: ${KEYCLOAK_ADMIN:-admin}
+      KC_BOOTSTRAP_ADMIN_PASSWORD: ${KEYCLOAK_ADMIN_PASSWORD:?set KEYCLOAK_ADMIN_PASSWORD in .env}
+      KC_DB: postgres
+      KC_DB_URL: jdbc:postgresql://postgres:5432/keycloak
+      KC_DB_USERNAME: keycloak
+      KC_DB_PASSWORD: ${KEYCLOAK_DB_PASSWORD:-}
+      # Behind the web proxy: it terminates TLS (or your own proxy does) and passes X-Forwarded-* headers.
+      KC_HTTP_ENABLED: "true"
+      KC_PROXY_HEADERS: xforwarded
+      KC_HTTP_RELATIVE_PATH: /idp
+      KC_HOSTNAME: ${CASTRA_PUBLIC_URL:-http://localhost:8080}/idp
+      # The admin console is not served on the public address (the proxy blocks it). Reach it with an
+      # SSH tunnel to this port, then open http://localhost:<port>/idp/admin/.
+      KC_HOSTNAME_ADMIN: http://localhost:${KEYCLOAK_HTTP_PORT:-8180}/idp
+      KC_HEALTH_ENABLED: "true"
+      KC_HTTP_MANAGEMENT_RELATIVE_PATH: /
+      # Substituted into the realm import as ${...}.
+      CASTRA_OIDC_CLIENT_SECRET: ${OIDC_CLIENT_SECRET:-}
+      CASTRA_PUBLIC_URL: ${CASTRA_PUBLIC_URL:-http://localhost:8080}
+    ports:
+      - "127.0.0.1:${KEYCLOAK_HTTP_PORT:-8180}:8080"
+    volumes:
+      - ./identity:/opt/keycloak/data/import:ro
+    healthcheck:
+      test:
+        - CMD-SHELL
+        - exec 3<>/dev/tcp/127.0.0.1/9000 && printf 'GET /health/ready HTTP/1.0\r\n\r\n' >&3 && grep -q '"UP"' <&3
+      interval: 10s
+      timeout: 5s
+      retries: 30
+      start_period: 60s
+
+volumes:
+  postgres-data:
+  nats-data:
+  valkey-data:
+  seaweedfs-data:

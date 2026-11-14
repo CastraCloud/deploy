@@ -1,0 +1,703 @@
+# Castra Helm chart values. Every setting here has a matching one in compose/.env.example, with the same default.
+#
+# Secrets: nothing secret has a default here. Give each one as an existing Kubernetes Secret
+# (existingSecret and key), or as a value for a trial, or set secrets.generate=true to let the chart make
+# random ones on first install. Read "Secrets" in the chart README before choosing.
+
+nameOverride: ""
+fullnameOverride: ""
+
+# minimal: one all-in-one Deployment (every role in one process). full: one Deployment per role.
+mode: minimal
+
+# The address people use, with no trailing slash, for example https://castra.example.com. It is used in email
+# links and as the origin the API accepts for changes from a browser (the CSRF check). Left empty, it is built from
+# ingress.host (https when ingress.tls.mode is not none). Set it when you use a Gateway or your own load balancer.
+publicUrl: ""
+
+logLevel: info
+
+image:
+  server:
+    repository: ghcr.io/castracloud/castra-server
+    # Empty means the chart's appVersion. Pin an exact release in production. A digest wins over the tag.
+    tag: ""
+    digest: ""
+    pullPolicy: IfNotPresent
+  web:
+    repository: ghcr.io/castracloud/castra-web
+    tag: ""
+    digest: ""
+    pullPolicy: IfNotPresent
+imagePullSecrets: []
+
+secrets:
+  # Make a random value for every secret that has no existingSecret and no value, on first install only. Later
+  # upgrades keep what was made (the chart looks the Secret up). Do NOT use this when you apply the output of
+  # "helm template" (Argo CD, Flux with plain manifests): there is no lookup there, and the secrets would change on
+  # every sync. Use existingSecret instead. The Secret the chart makes is kept when the release is removed.
+  generate: false
+
+serviceAccount:
+  create: true
+  name: ""
+  # For S3 with an IAM role (storage.s3.credentials: aws-default) on EKS, name the role here:
+  #   annotations:
+  #     eks.amazonaws.com/role-arn: arn:aws:iam::123456789012:role/castra-attachments
+  annotations: {}
+
+commonLabels: {}
+podAnnotations: {}
+podLabels: {}
+nodeSelector: {}
+tolerations: []
+affinity: {}
+
+# Used by every Castra role that does not set its own resources. Memory is limited; CPU is not, so pods are not throttled.
+resources:
+  requests:
+    cpu: 100m
+    memory: 256Mi
+  limits:
+    memory: 1Gi
+
+# ---------------------------------------------------------------------------------------------------------------------
+# Castra workloads
+# ---------------------------------------------------------------------------------------------------------------------
+
+# mode: minimal. Every role in one process, reached as api, collab and mail-in. Keep it at one replica: the background
+# workers run inside it.
+app:
+  replicas: 1
+  resources: {}
+  strategy: Recreate
+  podDisruptionBudget: false
+
+# mode: full. One Deployment per role. Only api is known to be safe to run more than once: the others each run
+# background work or hold live-editing state, so leave them at one replica unless Castra's release notes say otherwise.
+roles:
+  api:
+    enabled: true
+    replicas: 1
+    resources: {}
+    strategy: RollingUpdate
+    podDisruptionBudget: true
+  collab:
+    enabled: true
+    replicas: 1
+    resources: {}
+    strategy: RollingUpdate
+    podDisruptionBudget: true
+  realtime:
+    enabled: true
+    replicas: 1
+    resources: {}
+    strategy: Recreate
+    podDisruptionBudget: true
+  worker-jobs:
+    enabled: true
+    replicas: 1
+    resources: {}
+    strategy: Recreate
+    podDisruptionBudget: true
+  worker-sla:
+    enabled: true
+    replicas: 1
+    resources: {}
+    strategy: Recreate
+    podDisruptionBudget: true
+  mail-in:
+    enabled: true
+    replicas: 1
+    resources: {}
+    strategy: RollingUpdate
+    podDisruptionBudget: true
+  mail-out:
+    enabled: true
+    replicas: 1
+    resources: {}
+    strategy: Recreate
+    podDisruptionBudget: true
+  idp-sync:
+    enabled: true
+    replicas: 1
+    resources: {}
+    strategy: Recreate
+    podDisruptionBudget: true
+  indexer:
+    enabled: true
+    replicas: 1
+    resources: {}
+    strategy: Recreate
+    podDisruptionBudget: true
+  preview:
+    enabled: true
+    replicas: 1
+    resources: {}
+    strategy: Recreate
+    podDisruptionBudget: true
+
+# Applied to every Castra server container.
+securityContext:
+  runAsNonRoot: true
+  runAsUser: 1000
+  runAsGroup: 1000
+  allowPrivilegeEscalation: false
+  readOnlyRootFilesystem: true
+  capabilities:
+    drop: [ALL]
+  seccompProfile:
+    type: RuntimeDefault
+
+# The migrate Job: runs database migrations as castra_owner before an upgrade (and after the first install, so that a
+# bundled Postgres exists). Creates the first organisation from signIn.bootstrap.
+migrate:
+  resources: {}
+  activeDeadlineSeconds: 900
+  backoffLimit: 3
+
+# The web entry point: Caddy serving the web apps and proxying /api, /auth, /collab, the mail-in webhook and /idp.
+# TLS is done by the Ingress or Gateway, so the proxy serves plain http inside the cluster.
+web:
+  replicas: 1
+  # Proxies whose X-Forwarded-For the web proxy believes, so rate limits and the audit log see the real
+  # client address. "private_ranges" covers in-cluster ingress controllers; list CIDRs to narrow it.
+  trustedProxies: private_ranges
+  # Other sites pages may embed, as content security policy sources separated by spaces. Copy the line shown
+  # under Administration, Embedded sites. The page's own address and Draw.io are always allowed.
+  frameSrc: ""
+  resources:
+    requests:
+      cpu: 25m
+      memory: 64Mi
+    limits:
+      memory: 256Mi
+  podDisruptionBudget: true
+  securityContext:
+    runAsNonRoot: true
+    runAsUser: 10001
+    runAsGroup: 10001
+    allowPrivilegeEscalation: false
+    readOnlyRootFilesystem: true
+    capabilities:
+      drop: [ALL]
+    seccompProfile:
+      type: RuntimeDefault
+  service:
+    type: ClusterIP
+    annotations: {}
+
+# Sample data for a demo or test install only. demo.enabled sets CASTRA_DEMO=true; seedJob also runs the seed-demo
+# role once after install. Never on a real install.
+demo:
+  enabled: false
+  seedJob: false
+
+# Identity sources from a file (README, "Identity sources from a file"). Name an existing ConfigMap or Secret that
+# holds the file; the migrate Job reads it on each install and upgrade, and Administration, Identity sources becomes
+# read-only. The file refers to secrets as ${env:IDENTITY_SECRET_1} to ${env:IDENTITY_SECRET_3}, each taken from an
+# existing Secret below and given to the migrate Job only.
+identity:
+  file:
+    configMap: ""
+    secret: ""
+    key: identity.yaml
+  secret1: { existingSecret: "", key: "" }
+  secret2: { existingSecret: "", key: "" }
+  secret3: { existingSecret: "", key: "" }
+
+# ---------------------------------------------------------------------------------------------------------------------
+# Sign-in
+# ---------------------------------------------------------------------------------------------------------------------
+
+signIn:
+  # Leave issuer empty (and keycloak.enabled false) to start without sign-in: /auth/* then answers 503.
+  # Set issuer, clientId, the client secret and session secret together.
+  oidc:
+    issuer: ""
+    clientId: ""
+    clientSecret:
+      existingSecret: ""
+      key: client-secret
+      value: ""
+    # Empty means <publicUrl>/auth/callback. Register exactly this redirect URL with the provider.
+    redirectUri: ""
+    usernameClaim: preferred_username
+    groupsClaim: groups
+    # Comma-separated name prefixes: import only matching groups. Empty imports all.
+    groupPrefixFilter: ""
+    # Comma-separated group names: only people with one in the groups claim can sign in. Empty allows everyone.
+    requiredGroups: ""
+  # At least 32 random characters. Also the default key for webhook secrets and reply tokens.
+  session:
+    secret:
+      existingSecret: ""
+      key: session-secret
+      value: ""
+    # Cookies are Secure by default. "false" only for plain-http local development.
+    cookieSecure: ""
+    cookieName: ""
+    idleTimeoutSeconds: ""
+    absoluteTimeoutSeconds: ""
+  # The first organisation, created when the migrate Job runs. Needs an issuer (or keycloak.enabled).
+  bootstrap:
+    orgName: ""
+    orgSlug: ""
+    # Comma-separated usernames (the username claim) who become organisation admins when they first sign in.
+    admins: ""
+    # same_issuer: anyone who signs in through the issuer joins as a member. invite_only: admins add people by username.
+    joinPolicy: same_issuer
+  # Send Strict-Transport-Security from the API ("true"). Only when the site is served over https.
+  hsts: ""
+
+# ---------------------------------------------------------------------------------------------------------------------
+# Email
+# ---------------------------------------------------------------------------------------------------------------------
+
+# With smtp.host empty, Castra still shows notifications in the app and skips email.
+email:
+  smtp:
+    host: ""
+    port: ""
+    user: ""
+    password:
+      existingSecret: ""
+      key: smtp-password
+      value: ""
+    from: ""
+    # starttls, tls or none
+    tls: starttls
+  # Changes to one thing within this many seconds go out as a single email.
+  digestWindowSeconds: 120
+  # Attempts before an email is given up on.
+  maxAttempts: 6
+  # Set when the mail-in role receives replies at reply+token@this-domain. Until then no Reply-To is added.
+  replyDomain: ""
+  # Signs reply tokens. Defaults to the session secret.
+  tokenSecret:
+    existingSecret: ""
+    key: mail-token-secret
+    value: ""
+  replyTokenDays: 30
+
+# Web Push: alerts on phones and desktops that installed the app. Off unless all three are set.
+# Make the keys with `openssl` or the install script (see the README, "Installable app").
+push:
+  # The public key, as base64url text.
+  publicKey: ""
+  # The private key. Keep it in a Secret: use existingSecret, or value for a quick start.
+  privateKey:
+    existingSecret: ""
+    key: push-private-key
+    value: ""
+  # A mailto: address or https: URL the push services can reach you at.
+  contact: ""
+
+# Inbound email (the mail-in role). Use either input, or both.
+inboundEmail:
+  # 1. A mailbox Castra reads: IMAP, with IDLE where the server offers it. Mail is read and marked seen.
+  imap:
+    url: ""
+    user: ""
+    password:
+      existingSecret: ""
+      key: imap-password
+      value: ""
+    folder: INBOX
+    pollSeconds: 60
+  # 2. A provider that POSTs each raw message (message/rfc822) to <publicUrl>/api/v1/mail/inbound with the header
+  #    X-Castra-Mail-Secret (or a bearer token) set to this secret. At least 16 characters.
+  webhook:
+    enabled: false
+    secret:
+      existingSecret: ""
+      key: mail-in-webhook-secret
+      value: ""
+  # Messages over this many bytes are refused and logged.
+  maxBytes: 10485760
+  # Messages an hour from one sender, and to one service desk, before more are refused.
+  ratePerSender: 20
+  ratePerProject: 200
+  # Whose Authentication-Results headers to believe (comma-separated authserv-ids, usually your MX name).
+  trustedAuthserv: ""
+  # "true": mail without a passing DMARC result is refused.
+  requireDmarcPass: ""
+
+# ---------------------------------------------------------------------------------------------------------------------
+# Limits, webhooks, imports
+# ---------------------------------------------------------------------------------------------------------------------
+
+limits:
+  # "false" switches the API rate limits off.
+  rateLimitEnabled: ""
+  # Requests per window per client address (the web proxy passes the real address on: see web.trustedProxies).
+  rateLimitMax: 1200
+  rateLimitAuthMax: 30
+  rateLimitWindowSeconds: 60
+  # Requests per window for one API token, on top of the per-IP limit.
+  rateLimitTokenMax: 600
+  # Public status page: reads per minute and email sign-ups per hour per address, and how long a page is cached.
+  statusRateLimitPerMinute: 120
+  statusSubscribePerHour: 10
+  statusCacheSeconds: 30
+  # API tokens: longest lifetime in days (0 = no limit).
+  apiTokenMaxDays: 365
+  # Automation rule runs an organisation may start in an hour; more are logged as throttled.
+  automationMaxRunsPerHour: 600
+  # Most rows in a search results export. Larger result sets are cut and the file says so.
+  searchExportMaxRows: 5000
+
+webhooks:
+  # Outgoing webhooks: private ranges they may reach (comma-separated CIDRs; empty = none).
+  allowPrivateCidrs: ""
+  # Failed attempts in a row before a webhook is switched off.
+  disableAfter: 10
+  # Key for webhook secrets at rest. Defaults to the session secret. With secrets.generate a separate key is made.
+  encryptionKey:
+    existingSecret: ""
+    key: webhook-encryption-key
+    value: ""
+
+imports:
+  # Importers (Jira, Redmine and so on): private ranges they may reach, comma-separated CIDRs. Plain http is only
+  # accepted inside these ranges. Empty = only public hosts.
+  allowPrivateCidrs: ""
+
+# Other limits Castra reads, all optional (empty uses Castra's own default). Retention of tickets, versions and audit
+# events is set in the app under Administration, Retention, not here.
+advanced:
+  exportTtlHours: ""
+  importMaxBytes: ""
+  importMaxUnpackedBytes: ""
+  importMaxFiles: ""
+  importMaxPages: ""
+  libraryExportMaxPages: ""
+
+# Any other environment variable, added to every Castra server container (and the migrate Job). Plain values only:
+# put secrets in a Secret and use extraEnvFrom.
+extraEnv: []
+# - name: SOME_SETTING
+#   value: "x"
+extraEnvFrom: []
+# - secretRef:
+#     name: my-castra-extras
+# Extra volumes and mounts for every Castra server pod, for example a private CA certificate (then set
+# NODE_EXTRA_CA_CERTS in extraEnv to its path).
+extraVolumes: []
+# - name: private-ca
+#   configMap:
+#     name: corp-ca
+extraVolumeMounts: []
+# - name: private-ca
+#   mountPath: /etc/castra-ca
+#   readOnly: true
+
+# ---------------------------------------------------------------------------------------------------------------------
+# Metrics
+# ---------------------------------------------------------------------------------------------------------------------
+
+metrics:
+  # Serve /metrics in the Prometheus text format on every Castra role (off by default). Needs a token of 16
+  # characters or more, which callers send as a bearer token. The web proxy does not route /metrics.
+  enabled: false
+  token:
+    existingSecret: ""
+    key: metrics-token
+    value: ""
+  # Creates a ServiceMonitor for the Prometheus operator. Needs metrics.enabled.
+  serviceMonitor:
+    enabled: false
+    namespace: ""
+    interval: 30s
+    scrapeTimeout: 10s
+    labels: {}
+
+# ---------------------------------------------------------------------------------------------------------------------
+# Events
+# ---------------------------------------------------------------------------------------------------------------------
+
+events:
+  # outbox: workers read events straight from Postgres. nats: the relay publishes them to JetStream.
+  transport: outbox
+
+nats:
+  # Used only when events.transport is nats. bundled runs a single NATS server; external uses nats.url.
+  mode: bundled
+  url: ""
+  image: nats:2.11.8-alpine
+  storage:
+    size: 2Gi
+    storageClass: ""
+  resources: {}
+
+# ---------------------------------------------------------------------------------------------------------------------
+# Postgres (17 or newer)
+# ---------------------------------------------------------------------------------------------------------------------
+
+database:
+  # bundled: a single Postgres StatefulSet. external: your own server (run files/roles.sql on it first, see the README).
+  mode: bundled
+  name: castra
+  # castra_owner owns the schema and is used by the migrate Job only. castra_app is used by everything else and
+  # cannot bypass row-level security.
+  ownerPassword:
+    existingSecret: ""
+    key: owner-password
+    value: ""
+  appPassword:
+    existingSecret: ""
+    key: app-password
+    value: ""
+  bundled:
+    image: postgres:17.6-bookworm
+    # The Postgres superuser. Used to initialise the database, to create the keycloak database and for backups, not by Castra.
+    user: castra
+    superuserPassword:
+      existingSecret: ""
+      key: postgres-password
+      value: ""
+    storage:
+      size: 20Gi
+      storageClass: ""
+    resources:
+      requests:
+        cpu: 100m
+        memory: 256Mi
+      limits:
+        memory: 1Gi
+  external:
+    host: ""
+    port: 5432
+    # Added to the connection string, for example ?sslmode=require. Percent-encode any special characters in passwords.
+    params: ""
+
+# ---------------------------------------------------------------------------------------------------------------------
+# Valkey (or Redis): sessions and caches
+# ---------------------------------------------------------------------------------------------------------------------
+
+valkey:
+  mode: bundled
+  bundled:
+    image: valkey/valkey:8.1.3-alpine
+    storage:
+      size: 2Gi
+      storageClass: ""
+    resources:
+      requests:
+        cpu: 50m
+        memory: 64Mi
+      limits:
+        memory: 512Mi
+  external:
+    # For example rediss://:password@cache.example.com:6379. It holds a password, so it is read from a Secret.
+    url:
+      existingSecret: ""
+      key: valkey-url
+      value: ""
+
+# ---------------------------------------------------------------------------------------------------------------------
+# S3-compatible object storage: attachments
+# ---------------------------------------------------------------------------------------------------------------------
+
+storage:
+  # bundled: a single SeaweedFS server. external: your own bucket (create it first).
+  mode: bundled
+  bucket: castra
+  region: us-east-1
+  forcePathStyle: ""
+  # Largest attachment in bytes (default 25 MB).
+  attachmentMaxBytes: 26214400
+  s3:
+    # keys: the two keys below. aws-default: the AWS default credential chain, so Castra on AWS can use an IRSA or
+    # EKS pod identity role (annotate serviceAccount, see the chart README) or the node's instance role, with no
+    # fixed keys. Needs storage.mode: external, and accessKey and secretKey left empty.
+    credentials: keys
+  accessKey:
+    existingSecret: ""
+    key: access-key
+    value: ""
+  secretKey:
+    existingSecret: ""
+    key: secret-key
+    value: ""
+  external:
+    # For example https://s3.example.com
+    endpoint: ""
+  bundled:
+    image: chrislusf/seaweedfs:3.97
+    # Each storage volume reserves its full size on disk up front, so keep them small by default.
+    volumeSizeLimitMB: 256
+    storage:
+      size: 50Gi
+      storageClass: ""
+    resources:
+      requests:
+        cpu: 100m
+        memory: 256Mi
+      limits:
+        memory: 1Gi
+    # This image writes outside /data, so the root file system is left writable.
+    securityContext:
+      runAsNonRoot: true
+      runAsUser: 10002
+      runAsGroup: 10002
+      fsGroup: 10002
+      allowPrivilegeEscalation: false
+      capabilities:
+        drop: [ALL]
+      seccompProfile:
+        type: RuntimeDefault
+
+# ---------------------------------------------------------------------------------------------------------------------
+# Draw.io: diagram editing in Caelus pages
+# ---------------------------------------------------------------------------------------------------------------------
+
+drawio:
+  # bundled: the official jgraph/drawio image, served by the web proxy on its own host so the editor has its own
+  # origin. external: a Draw.io you run, at external.url. none: no diagram editing.
+  mode: bundled
+  # The host people use for the bundled editor, for example drawio.example.com. It needs its own DNS name and
+  # certificate. Added to the Ingress. With a Gateway or your own load balancer, set publicUrl instead.
+  host: ""
+  # The full address of the bundled editor when you do not use the Ingress, for example https://drawio.example.com.
+  publicUrl: ""
+  external:
+    url: ""
+  image: jgraph/drawio:32.6.10
+  resources:
+    requests:
+      cpu: 50m
+      memory: 256Mi
+    limits:
+      memory: 1Gi
+  # The image is Tomcat and writes to several places, so the root file system is left writable.
+  securityContext:
+    allowPrivilegeEscalation: false
+    capabilities:
+      drop: [ALL]
+    seccompProfile:
+      type: RuntimeDefault
+
+# ---------------------------------------------------------------------------------------------------------------------
+# Keycloak: sign-in for installs with no identity provider of their own
+# ---------------------------------------------------------------------------------------------------------------------
+
+keycloak:
+  # Keycloak in production mode, served at <publicUrl>/idp, with its own database (keycloak) in the bundled Postgres.
+  # Its realm (castra) has the Castra client and no users. Needs database.mode=bundled and an https public address
+  # that the Castra pods can reach.
+  enabled: false
+  image: quay.io/keycloak/keycloak:26.3.3
+  adminUser: admin
+  adminPassword:
+    existingSecret: ""
+    key: admin-password
+    value: ""
+  databasePassword:
+    existingSecret: ""
+    key: db-password
+    value: ""
+  resources:
+    requests:
+      cpu: 250m
+      memory: 768Mi
+    limits:
+      memory: 1536Mi
+  # Keycloak builds its configuration when it starts, so the root file system is left writable.
+  securityContext:
+    runAsNonRoot: true
+    runAsUser: 1000
+    runAsGroup: 1000
+    allowPrivilegeEscalation: false
+    capabilities:
+      drop: [ALL]
+    seccompProfile:
+      type: RuntimeDefault
+
+# ---------------------------------------------------------------------------------------------------------------------
+# Ingress and Gateway
+# ---------------------------------------------------------------------------------------------------------------------
+
+ingress:
+  enabled: false
+  className: ""
+  host: ""
+  annotations: {}
+  # Annotations that keep the live-editing WebSocket (/collab) open and let attachments through.
+  #   nginx:   long read and send timeouts, and a body size limit.
+  #   traefik: the https entry point (idle timeouts are set on Traefik's entry point, see the README).
+  #   none:    nothing added; set what your controller needs under annotations.
+  preset: none
+  # nginx only: the largest request body. Keep it above storage.attachmentMaxBytes.
+  maxBodySize: 100m
+  # traefik only
+  traefikEntryPoints: websecure
+  tls:
+    # none: serve http (use this behind a load balancer that ends TLS).
+    # existingSecret: a kubernetes.io/tls Secret you made, named in secretName.
+    # certManager: cert-manager makes the certificate (see issuer).
+    mode: none
+    secretName: ""
+    issuer:
+      # ClusterIssuer or Issuer
+      kind: ClusterIssuer
+      name: ""
+      # Extra cert-manager annotations, for example cert-manager.io/issuer-group for an external issuer type.
+      annotations: {}
+
+# Gateway API, instead of Ingress. Needs the Gateway API CRDs and a Gateway you already run.
+gateway:
+  enabled: false
+  parentRefs: []
+  # - name: shared-gateway
+  #   namespace: gateway-system
+  hostnames: []
+  drawioHostnames: []
+  # Passed to each rule, for example request: 3600s so live editing is not cut off (Gateway API v1.1).
+  timeouts: {}
+
+# ---------------------------------------------------------------------------------------------------------------------
+# Backups
+# ---------------------------------------------------------------------------------------------------------------------
+
+# A CronJob that dumps Postgres (custom format, as the compose backup.sh does) and checks the dump. It does not copy
+# object storage or your secrets: see "Backups" in the chart README.
+backup:
+  enabled: false
+  schedule: "17 2 * * *"
+  # pvc or s3
+  target: pvc
+  # Keep only the newest N backups (pvc target only). Use bucket lifecycle rules for s3.
+  keep: 14
+  pvc:
+    # Use an existing claim, or leave empty to make one of this size.
+    existingClaim: ""
+    size: 20Gi
+    storageClass: ""
+  s3:
+    bucket: ""
+    prefix: castra-backups
+    endpoint: ""
+    region: us-east-1
+    accessKey:
+      existingSecret: ""
+      key: access-key
+      value: ""
+    secretKey:
+      existingSecret: ""
+      key: secret-key
+      value: ""
+    image: amazon/aws-cli:2.27.50
+  # External Postgres only: a role allowed to read every table (the superuser, or one that bypasses row-level security).
+  # castra_owner cannot be used: it stops with an error on the forced row-level security.
+  database:
+    user: ""
+    password:
+      existingSecret: ""
+      key: password
+      value: ""
+  # Extra environment for the dump step, for example PGSSLMODE=require for an external Postgres.
+  extraEnv: []
+  resources: {}
+  successfulJobsHistoryLimit: 3
+  failedJobsHistoryLimit: 3

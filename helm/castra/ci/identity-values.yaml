@@ -1,0 +1,25 @@
+# The bundled Keycloak, with the bundled NATS, behind an Ingress using cert-manager.
+secrets:
+  generate: true
+mode: full
+keycloak:
+  enabled: true
+events:
+  transport: nats
+signIn:
+  bootstrap:
+    orgName: Example Org
+    orgSlug: example
+    admins: admin1
+ingress:
+  enabled: true
+  className: traefik
+  host: castra.example.com
+  preset: traefik
+  tls:
+    mode: certManager
+    issuer:
+      kind: ClusterIssuer
+      name: letsencrypt
+drawio:
+  host: drawio.example.com

@@ -1,0 +1,62 @@
+mode: full
+secrets:
+  generate: true
+publicUrl: https://castra.example.com
+signIn:
+  oidc:
+    issuer: https://idp.example.com/realms/castra
+    clientId: castra
+    clientSecret:
+      existingSecret: castra-oidc
+  bootstrap:
+    orgName: Example Org
+    orgSlug: example
+    admins: alice
+email:
+  smtp:
+    host: smtp.example.com
+    port: 587
+    password:
+      existingSecret: castra-smtp
+      key: password
+push:
+  publicKey: BEl62iUYgUivxIkv69yViEuiBIa-Ib9-SkvMeAtA3LFgDzkrxZJjSgSnfckjBJuBkr3qBUYIHBQFLXYp5Nksh8U
+  privateKey:
+    existingSecret: castra-push
+    key: private-key
+  contact: mailto:ops@example.com
+inboundEmail:
+  webhook:
+    enabled: true
+metrics:
+  enabled: true
+  serviceMonitor:
+    enabled: true
+roles:
+  api:
+    replicas: 2
+web:
+  replicas: 2
+backup:
+  enabled: true
+ingress:
+  enabled: true
+  className: nginx
+  host: castra.example.com
+  preset: nginx
+  tls:
+    mode: existingSecret
+    secretName: castra-tls
+drawio:
+  host: drawio.example.com
+extraEnv:
+  - name: NODE_EXTRA_CA_CERTS
+    value: /etc/castra-ca/ca.pem
+extraVolumes:
+  - name: private-ca
+    configMap:
+      name: corp-ca
+extraVolumeMounts:
+  - name: private-ca
+    mountPath: /etc/castra-ca
+    readOnly: true

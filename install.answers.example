@@ -1,0 +1,112 @@
+# Answers for ./install.sh --answers install.answers.env (copy this file, edit it, keep it private: it may hold
+# passwords). One KEY=value per line. Anything left out takes the default shown, or is required where it says so.
+# Secrets that Castra generates (database passwords, session secret, storage keys) are never asked for.
+
+# Required. The release to install, for example 1.0.0.
+VERSION=
+
+# Run every part in one process (minimal) or one service per part (full).
+PROFILE=minimal
+
+# What to do if compose/.env already exists: keep (default) or replace (saves the old file first).
+EXISTING_ENV=keep
+
+# --- Address and HTTPS -----------------------------------------------------------------------------
+# TLS_MODE: off (plain http, behind your own proxy or for a trial), self-signed, files or acme.
+TLS_MODE=off
+# Required unless TLS_MODE=off (then it defaults to localhost). The name people type, no scheme or port.
+DOMAIN=
+# TLS_MODE=off only: does your own proxy serve Castra over https? yes or no. And the port Castra listens on.
+PROXY_HTTPS=no
+HTTP_PORT=8080
+# TLS_MODE=files: absolute paths of the certificate chain and key.
+#TLS_CERT_FILE=/etc/ssl/castra/fullchain.pem
+#TLS_KEY_FILE=/etc/ssl/castra/privkey.pem
+# TLS_MODE=acme: all optional. With none of them: Let's Encrypt.
+#ACME_EMAIL=ops@example.com
+#ACME_DIRECTORY=https://ca.example.internal/acme/acme/directory
+#ACME_CA_ROOT=/etc/ssl/castra/ca-root.pem
+#ACME_EAB_KEY_ID=
+#ACME_EAB_HMAC_KEY=
+
+# --- Diagrams ----------------------------------------------------------------------------------------
+# bundled, external or none. DRAWIO_MODE (bundled, with a host name for DOMAIN): host serves Draw.io on a host name of
+# its own, port on its own port. Host is the default; a name that is not an IP address needs a DNS record.
+# DRAWIO_DOMAIN: that host name. Default: <first label>-diagrams.<rest> for a name with three or more labels
+# (castra-diagrams.example.com), else diagrams.<DOMAIN>. The first form is covered by a one-level wildcard certificate.
+# DRAWIO_PORT: where the bundled one listens in port mode (an answers file that sets it, with no DRAWIO_MODE, keeps port mode).
+# DRAWIO_TLS_CERT_FILE and DRAWIO_TLS_KEY_FILE: TLS_MODE=files only, if your certificate does not cover the Draw.io name.
+# DRAWIO_PUBLIC_URL: your own Draw.io (external), or the https address your proxy gives the bundled one in port mode.
+DRAWIO=bundled
+DRAWIO_MODE=host
+#DRAWIO_DOMAIN=castra-diagrams.example.com
+#DRAWIO_PORT=8081
+#DRAWIO_TLS_CERT_FILE=/etc/ssl/castra/diagrams-fullchain.pem
+#DRAWIO_TLS_KEY_FILE=/etc/ssl/castra/diagrams-privkey.pem
+#DRAWIO_PUBLIC_URL=
+
+# --- Database ----------------------------------------------------------------------------------------
+# bundled (Postgres 17 in Compose) or external (your own Postgres 17 or newer).
+DATABASE=bundled
+#DB_HOST=db.example.com
+#DB_PORT=5432
+#DB_NAME=castra
+#DB_SSLMODE=require
+# Leave the two passwords out to have them generated. With an admin user, the script creates the roles.
+#DB_OWNER_PASSWORD=
+#DB_APP_PASSWORD=
+#DB_ADMIN_USER=
+#DB_ADMIN_PASSWORD=
+
+# --- Storage -----------------------------------------------------------------------------------------
+# bundled (SeaweedFS in Compose) or s3 (an existing S3-compatible bucket, which must already exist).
+STORAGE=bundled
+#S3_ENDPOINT_ANS=https://s3.example.com
+#S3_REGION_ANS=us-east-1
+#S3_BUCKET_ANS=castra
+#S3_ACCESS_KEY_ANS=
+#S3_SECRET_KEY_ANS=
+#S3_PATH_STYLE=true
+
+# --- Sign-in -----------------------------------------------------------------------------------------
+# external (your own OpenID Connect provider) or bundled (Keycloak in Compose, at <address>/idp).
+IDP=external
+ORG_NAME=My organisation
+#ORG_SLUG=my-organisation
+# IDP=external:
+#OIDC_ISSUER_ANS=https://keycloak.example.com/realms/castra
+#OIDC_CLIENT_ID_ANS=castra
+#OIDC_CLIENT_SECRET_ANS=
+#OIDC_USERNAME_CLAIM_ANS=preferred_username
+#OIDC_GROUPS_CLAIM_ANS=groups
+#OIDC_REQUIRED_GROUPS_ANS=castra-users
+#BOOTSTRAP_ADMINS=alice
+# IDP=bundled: the first administrator. Without a password one is generated and saved to compose/first-admin.txt.
+#FIRST_ADMIN_USER=admin
+#FIRST_ADMIN_NAME=Castra Admin
+#FIRST_ADMIN_EMAIL=admin@example.com
+#FIRST_ADMIN_PASSWORD=
+
+# --- Email -------------------------------------------------------------------------------------------
+# Outgoing: none or smtp.
+EMAIL=none
+#SMTP_HOST_ANS=smtp.example.com
+#SMTP_PORT_ANS=587
+#SMTP_TLS_ANS=starttls
+#SMTP_USER_ANS=
+#SMTP_PASSWORD_ANS=
+#SMTP_FROM_ANS=Castra <castra@example.com>
+# Push notifications to phones and desktops that install the app: no or yes. With yes, the keys are made
+# for you and saved in compose/.env.
+PUSH=no
+#PUSH_CONTACT_ANS=mailto:ops@example.com
+# Incoming (email to tickets): none or imap.
+INBOUND=none
+#IMAP_URL_ANS=imaps://imap.example.com
+#IMAP_USER_ANS=support@example.com
+#IMAP_PASSWORD_ANS=
+#IMAP_FOLDER_ANS=INBOX
+
+# --- Events ------------------------------------------------------------------------------------------
+# outbox (Postgres only) or nats (also starts the NATS service).
+EVENT_TRANSPORT=outbox

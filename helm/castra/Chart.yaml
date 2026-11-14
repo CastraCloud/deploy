@@ -1,0 +1,14 @@
+apiVersion: v2
+name: castra
+description: Castra, a self-hosted suite of Minerva (agile), Caelus (wiki) and Mercury (service desk).
+type: application
+# The chart version and appVersion are set to the release number when the chart is published
+# (scripts/publish-public.sh). appVersion is the default image tag.
+version: 0.9.0
+appVersion: "0.9.0"
+kubeVersion: ">=1.27.0-0"
+keywords:
+  - castra
+  - minerva
+  - caelus
+  - mercury

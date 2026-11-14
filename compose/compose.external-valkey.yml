@@ -1,0 +1,5 @@
+# Use your own Valkey or Redis instead of the bundled Valkey. Add it after compose.yml and set VALKEY_URL in .env
+# (for example rediss://:password@cache.example.com:6379). The bundled valkey service is switched off.
+services:
+  valkey:
+    profiles: [bundled-valkey-off]

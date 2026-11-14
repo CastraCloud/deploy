@@ -1,0 +1,54 @@
+Castra {{ .Chart.AppVersion }} is installing as "{{ .Release.Name }}" in namespace "{{ .Release.Namespace }}".
+
+Address: {{ include "castra.publicUrl" . }}
+{{- if and (eq .Values.drawio.mode "bundled") (include "castra.drawioUrl" .) }}
+Draw.io (diagram editing): {{ include "castra.drawioUrl" . }}
+{{- end }}
+
+Watch it start (the database migration runs as a Job, and can take a minute):
+  kubectl -n {{ .Release.Namespace }} get pods -l app.kubernetes.io/instance={{ .Release.Name }} -w
+  kubectl -n {{ .Release.Namespace }} logs job/{{ include "castra.fullname" . }}-migrate
+{{- if eq .Values.database.mode "bundled" }}
+
+On the first install the web and API pods may restart once or twice while the database starts and the migration runs.
+{{- end }}
+
+{{- if not (or .Values.ingress.enabled .Values.gateway.enabled) }}
+
+No Ingress or Gateway was made. To try Castra from your own machine:
+  kubectl -n {{ .Release.Namespace }} port-forward svc/{{ include "castra.fullname" . }}-web 8080:80
+then open http://localhost:8080 (set publicUrl to that address for a trial).
+{{- end }}
+
+{{- if and (or .Values.ingress.enabled .Values.gateway.enabled) (hasPrefix "http://" (include "castra.publicUrl" .)) }}
+
+WARNING: the address is plain http. Passwords and sessions cross the network. Use TLS for anything real.
+{{- end }}
+
+{{- if not (include "castra.signIn" .) }}
+
+Sign-in is not set up: /auth/* answers 503. Set signIn.oidc.* (your identity provider) or keycloak.enabled=true.
+{{- end }}
+
+{{- if .Values.keycloak.enabled }}
+
+Bundled sign-in is at {{ include "castra.publicUrl" . }}/idp. Its realm "castra" has no users. To reach the admin console:
+  kubectl -n {{ .Release.Namespace }} port-forward svc/{{ include "castra.fullname" . }}-keycloak 8180:8080
+  then open http://localhost:8180/idp/admin/ and choose the castra realm.
+{{- if not .Values.keycloak.adminPassword.existingSecret }}
+Admin password:
+  kubectl -n {{ .Release.Namespace }} get secret {{ include "castra.secretName" . }} -o jsonpath='{.data.keycloak-admin-password}' | base64 -d; echo
+{{- end }}
+{{- end }}
+
+{{- if .Values.secrets.generate }}
+
+Random secrets were made for anything you did not supply. They are in the Secret "{{ include "castra.secretName" . }}", which is
+kept if you remove the release. Keep a copy somewhere safe and separate from your backups.
+{{- end }}
+
+{{- if and .Values.backup.enabled }}
+
+Backups: a dump of Postgres runs on "{{ .Values.backup.schedule }}" to {{ .Values.backup.target }}. It does not copy attachments or secrets.
+See "Backups" in the chart README.
+{{- end }}

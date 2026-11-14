@@ -1,0 +1,12 @@
+# Used by scripts/validate-helm.sh. Trial values: generated secrets, no TLS.
+secrets:
+  generate: true
+publicUrl: http://castra.test
+drawio:
+  publicUrl: http://drawio.castra.test
+signIn:
+  oidc:
+    issuer: https://idp.example.com/realms/castra
+    clientId: castra
+    clientSecret:
+      value: not-a-real-secret

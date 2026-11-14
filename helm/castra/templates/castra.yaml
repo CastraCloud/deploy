@@ -1,0 +1,103 @@
+{{- /* One Deployment per workload (a single all-in-one one in minimal mode, one per role in full mode), its Service where
+       one is needed, and a PodDisruptionBudget where it makes sense. */ -}}
+{{- $full := include "castra.fullname" . -}}
+{{- $workloads := include "castra.workloads" . | fromJsonArray -}}
+{{- range $w := $workloads }}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ $full }}-{{ $w.name }}
+  labels:
+    {{- include "castra.labels" $ | nindent 4 }}
+    app.kubernetes.io/component: {{ $w.name }}
+spec:
+  replicas: {{ $w.cfg.replicas }}
+  revisionHistoryLimit: 3
+  strategy:
+    type: {{ $w.cfg.strategy }}
+  selector:
+    matchLabels:
+      {{- include "castra.selector" (dict "root" $ "component" $w.name) | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "castra.labels" $ | nindent 8 }}
+        app.kubernetes.io/component: {{ $w.name }}
+        {{- with $.Values.podLabels }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+      {{- with $.Values.podAnnotations }}
+      annotations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+    spec:
+      serviceAccountName: {{ include "castra.serviceAccountName" $ }}
+      automountServiceAccountToken: false
+      {{- include "castra.pullSecrets" $ | nindent 6 }}
+      securityContext:
+        runAsNonRoot: true
+        seccompProfile:
+          type: RuntimeDefault
+      terminationGracePeriodSeconds: 30
+      containers:
+        {{- include "castra.serverContainer" (dict "root" $ "role" $w.role "hook" false "noProbes" false "resources" $w.cfg.resources) | nindent 8 }}
+      volumes:
+        - name: tmp
+          emptyDir: {}
+        {{- with $.Values.extraVolumes }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+      {{- include "castra.scheduling" $ | nindent 6 }}
+{{- end }}
+
+{{- /* Services. The web proxy reaches api, collab and mail-in by name. In minimal mode all three are the one app. */ -}}
+{{- $serviceFor := list -}}
+{{- if eq .Values.mode "minimal" -}}
+{{- range $n := list "api" "collab" "mail-in" -}}
+{{- $serviceFor = append $serviceFor (dict "service" $n "component" "app") -}}
+{{- end -}}
+{{- else -}}
+{{- range $w := $workloads -}}
+{{- if or $.Values.metrics.enabled (has $w.name (list "api" "collab" "mail-in")) -}}
+{{- $serviceFor = append $serviceFor (dict "service" $w.name "component" $w.name) -}}
+{{- end -}}
+{{- end -}}
+{{- end -}}
+{{- range $s := $serviceFor }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ $full }}-{{ $s.service }}
+  labels:
+    {{- include "castra.labels" $ | nindent 4 }}
+    app.kubernetes.io/component: {{ $s.service }}
+    castracloud.com/role-service: "true"
+spec:
+  type: ClusterIP
+  ports:
+    - name: http
+      port: 8080
+      targetPort: http
+      protocol: TCP
+  selector:
+    {{- include "castra.selector" (dict "root" $ "component" $s.component) | nindent 4 }}
+{{- end }}
+
+{{- range $w := $workloads }}
+{{- if and $w.cfg.podDisruptionBudget (gt (int $w.cfg.replicas) 1) }}
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: {{ $full }}-{{ $w.name }}
+  labels:
+    {{- include "castra.labels" $ | nindent 4 }}
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels:
+      {{- include "castra.selector" (dict "root" $ "component" $w.name) | nindent 6 }}
+{{- end }}
+{{- end }}

@@ -1,0 +1,81 @@
+{{- if eq .Values.drawio.mode "bundled" }}
+{{- $full := include "castra.fullname" . -}}
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ $full }}-drawio
+  labels:
+    {{- include "castra.labels" . | nindent 4 }}
+    app.kubernetes.io/component: drawio
+spec:
+  type: ClusterIP
+  ports:
+    - name: http
+      port: 8080
+      targetPort: http
+  selector:
+    {{- include "castra.selector" (dict "root" . "component" "drawio") | nindent 4 }}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ $full }}-drawio
+  labels:
+    {{- include "castra.labels" . | nindent 4 }}
+    app.kubernetes.io/component: drawio
+spec:
+  replicas: 1
+  revisionHistoryLimit: 3
+  selector:
+    matchLabels:
+      {{- include "castra.selector" (dict "root" . "component" "drawio") | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "castra.labels" . | nindent 8 }}
+        app.kubernetes.io/component: drawio
+      {{- with .Values.podAnnotations }}
+      annotations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+    spec:
+      automountServiceAccountToken: false
+      {{- include "castra.pullSecrets" . | nindent 6 }}
+      securityContext:
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: drawio
+          image: {{ .Values.drawio.image | quote }}
+          env:
+            # Asks Draw.io not to call outside services; older images ignore it.
+            - name: DRAWIO_SELF_CONTAINED
+              value: "1"
+          ports:
+            - name: http
+              containerPort: 8080
+          startupProbe:
+            httpGet:
+              path: /
+              port: http
+            periodSeconds: 5
+            failureThreshold: 36
+          readinessProbe:
+            httpGet:
+              path: /
+              port: http
+            periodSeconds: 10
+            timeoutSeconds: 5
+          livenessProbe:
+            httpGet:
+              path: /
+              port: http
+            periodSeconds: 30
+            timeoutSeconds: 5
+            failureThreshold: 5
+          resources:
+            {{- toYaml .Values.drawio.resources | nindent 12 }}
+          securityContext:
+            {{- toYaml .Values.drawio.securityContext | nindent 12 }}
+      {{- include "castra.scheduling" . | nindent 6 }}
+{{- end }}

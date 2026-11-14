@@ -1,0 +1,38 @@
+{{- if and .Values.demo.enabled .Values.demo.seedJob }}
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: {{ include "castra.fullname" . }}-seed-demo
+  labels:
+    {{- include "castra.labels" . | nindent 4 }}
+    app.kubernetes.io/component: seed-demo
+  annotations:
+    helm.sh/hook: post-install
+    helm.sh/hook-weight: "10"
+    helm.sh/hook-delete-policy: before-hook-creation,hook-succeeded
+spec:
+  backoffLimit: 3
+  template:
+    metadata:
+      labels:
+        {{- include "castra.selector" (dict "root" . "component" "seed-demo") | nindent 8 }}
+    spec:
+      restartPolicy: Never
+      serviceAccountName: {{ include "castra.serviceAccountName" . }}
+      automountServiceAccountToken: false
+      {{- include "castra.pullSecrets" . | nindent 6 }}
+      securityContext:
+        runAsNonRoot: true
+        seccompProfile:
+          type: RuntimeDefault
+      initContainers:
+        {{- include "castra.waitForDb" (dict "root" .) | nindent 8 }}
+      containers:
+        {{- include "castra.serverContainer" (dict "root" . "role" "seed-demo" "hook" false "noProbes" true "resources" .Values.migrate.resources) | nindent 8 }}
+      volumes:
+        - name: tmp
+          emptyDir: {}
+        {{- with .Values.extraVolumes }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+{{- end }}

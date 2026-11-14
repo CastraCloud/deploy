@@ -1,0 +1,143 @@
+{{- if eq .Values.database.mode "bundled" }}
+{{- $full := include "castra.fullname" . -}}
+{{- $v := .Values.database -}}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ $full }}-postgres-init
+  labels:
+    {{- include "castra.labels" . | nindent 4 }}
+    app.kubernetes.io/component: postgres
+data:
+  # Run once, on the first start of an empty volume: creates castra_owner and castra_app.
+  01-castra-roles.sh: |
+    {{- .Files.Get "files/01-castra-roles.sh" | nindent 4 }}
+  roles.sql: |
+    {{- .Files.Get "files/roles.sql" | nindent 4 }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ $full }}-postgres
+  labels:
+    {{- include "castra.labels" . | nindent 4 }}
+    app.kubernetes.io/component: postgres
+spec:
+  type: ClusterIP
+  ports:
+    - name: postgres
+      port: 5432
+      targetPort: postgres
+  selector:
+    {{- include "castra.selector" (dict "root" . "component" "postgres") | nindent 4 }}
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: {{ $full }}-postgres
+  labels:
+    {{- include "castra.labels" . | nindent 4 }}
+    app.kubernetes.io/component: postgres
+spec:
+  serviceName: {{ $full }}-postgres
+  replicas: 1
+  selector:
+    matchLabels:
+      {{- include "castra.selector" (dict "root" . "component" "postgres") | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "castra.labels" . | nindent 8 }}
+        app.kubernetes.io/component: postgres
+      {{- with .Values.podAnnotations }}
+      annotations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+    spec:
+      automountServiceAccountToken: false
+      {{- include "castra.pullSecrets" . | nindent 6 }}
+      terminationGracePeriodSeconds: 60
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 999
+        runAsGroup: 999
+        fsGroup: 999
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: postgres
+          image: {{ $v.bundled.image | quote }}
+          env:
+            - name: POSTGRES_USER
+              value: {{ $v.bundled.user | quote }}
+            - name: POSTGRES_DB
+              value: {{ $v.name | quote }}
+            - name: PGDATA
+              value: /var/lib/postgresql/data/pgdata
+            - name: POSTGRES_PASSWORD
+              {{- include "castra.sref" (dict "root" . "cfg" $v.bundled.superuserPassword "k" "db-superuser-password" "hook" false) | nindent 14 }}
+            - name: CASTRA_DB_OWNER_PASSWORD
+              {{- include "castra.sref" (dict "root" . "cfg" $v.ownerPassword "k" "db-owner-password" "hook" false) | nindent 14 }}
+            - name: CASTRA_DB_APP_PASSWORD
+              {{- include "castra.sref" (dict "root" . "cfg" $v.appPassword "k" "db-app-password" "hook" false) | nindent 14 }}
+          ports:
+            - name: postgres
+              containerPort: 5432
+          readinessProbe:
+            exec:
+              command: ["sh", "-c", "pg_isready -U \"$POSTGRES_USER\" -d \"$POSTGRES_DB\""]
+            periodSeconds: 10
+            timeoutSeconds: 5
+          livenessProbe:
+            exec:
+              command: ["sh", "-c", "pg_isready -U \"$POSTGRES_USER\" -d \"$POSTGRES_DB\""]
+            periodSeconds: 20
+            timeoutSeconds: 5
+            failureThreshold: 6
+          startupProbe:
+            exec:
+              command: ["sh", "-c", "pg_isready -U \"$POSTGRES_USER\" -d \"$POSTGRES_DB\""]
+            periodSeconds: 5
+            failureThreshold: 60
+          resources:
+            {{- toYaml $v.bundled.resources | nindent 12 }}
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: [ALL]
+          volumeMounts:
+            - name: data
+              mountPath: /var/lib/postgresql/data
+            - name: run
+              mountPath: /var/run/postgresql
+            - name: tmp
+              mountPath: /tmp
+            - name: init
+              mountPath: /docker-entrypoint-initdb.d/01-castra-roles.sh
+              subPath: 01-castra-roles.sh
+            - name: init
+              mountPath: /castra/roles.sql
+              subPath: roles.sql
+      volumes:
+        - name: run
+          emptyDir: {}
+        - name: tmp
+          emptyDir: {}
+        - name: init
+          configMap:
+            name: {{ $full }}-postgres-init
+            defaultMode: 0555
+      {{- include "castra.scheduling" . | nindent 6 }}
+  volumeClaimTemplates:
+    - metadata:
+        name: data
+      spec:
+        accessModes: [ReadWriteOnce]
+        {{- with $v.bundled.storage.storageClass }}
+        storageClassName: {{ . | quote }}
+        {{- end }}
+        resources:
+          requests:
+            storage: {{ $v.bundled.storage.size }}
+{{- end }}

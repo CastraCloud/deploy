@@ -1,0 +1,197 @@
+{{- if .Values.keycloak.enabled }}
+{{- $full := include "castra.fullname" . -}}
+{{- $v := .Values.keycloak -}}
+{{- $url := include "castra.publicUrl" . -}}
+{{- if ne .Values.database.mode "bundled" }}
+{{- fail "keycloak.enabled needs database.mode=bundled: Keycloak keeps its data in a database in the bundled Postgres. Use your own identity provider with an external Postgres." }}
+{{- end }}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ $full }}-keycloak
+  labels:
+    {{- include "castra.labels" . | nindent 4 }}
+    app.kubernetes.io/component: keycloak
+data:
+  # The realm is imported on the first start: one confidential client (castra) and no users.
+  castra-realm.json: |
+    {{- .Files.Get "files/castra-realm.json" | nindent 4 }}
+  idp-db.sh: |
+    {{- .Files.Get "files/idp-db.sh" | nindent 4 }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ $full }}-keycloak
+  labels:
+    {{- include "castra.labels" . | nindent 4 }}
+    app.kubernetes.io/component: keycloak
+spec:
+  type: ClusterIP
+  ports:
+    - name: http
+      port: 8080
+      targetPort: http
+  selector:
+    {{- include "castra.selector" (dict "root" . "component" "keycloak") | nindent 4 }}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ $full }}-keycloak
+  labels:
+    {{- include "castra.labels" . | nindent 4 }}
+    app.kubernetes.io/component: keycloak
+spec:
+  replicas: 1
+  revisionHistoryLimit: 3
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      {{- include "castra.selector" (dict "root" . "component" "keycloak") | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "castra.labels" . | nindent 8 }}
+        app.kubernetes.io/component: keycloak
+      {{- with .Values.podAnnotations }}
+      annotations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+    spec:
+      automountServiceAccountToken: false
+      {{- include "castra.pullSecrets" . | nindent 6 }}
+      securityContext:
+        runAsNonRoot: true
+        seccompProfile:
+          type: RuntimeDefault
+      initContainers:
+        {{- include "castra.waitForDb" (dict "root" .) | nindent 8 }}
+        # Creates the keycloak role and database in the bundled Postgres. Safe to run on every start.
+        - name: idp-db-init
+          image: {{ .Values.database.bundled.image | quote }}
+          command: ["sh", "/castra/idp-db.sh"]
+          env:
+            - name: PGHOST
+              value: {{ $full }}-postgres
+            - name: PGUSER
+              value: {{ .Values.database.bundled.user | quote }}
+            - name: PGDATABASE
+              value: {{ .Values.database.name | quote }}
+            - name: PGPASSWORD
+              {{- include "castra.sref" (dict "root" . "cfg" .Values.database.bundled.superuserPassword "k" "db-superuser-password" "hook" false) | nindent 14 }}
+            - name: KEYCLOAK_DB_PASSWORD
+              {{- include "castra.sref" (dict "root" . "cfg" $v.databasePassword "k" "keycloak-db-password" "hook" false) | nindent 14 }}
+            - name: OIDC_CLIENT_SECRET
+              {{- include "castra.sref" (dict "root" . "cfg" .Values.signIn.oidc.clientSecret "k" "oidc-client-secret" "hook" false) | nindent 14 }}
+          resources:
+            requests:
+              cpu: 10m
+              memory: 32Mi
+          securityContext:
+            runAsNonRoot: true
+            runAsUser: 999
+            runAsGroup: 999
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: [ALL]
+          volumeMounts:
+            - name: scripts
+              mountPath: /castra
+              readOnly: true
+      containers:
+        - name: keycloak
+          image: {{ $v.image | quote }}
+          args: ["start", "--import-realm"]
+          env:
+            - name: KC_BOOTSTRAP_ADMIN_USERNAME
+              value: {{ $v.adminUser | quote }}
+            - name: KC_BOOTSTRAP_ADMIN_PASSWORD
+              {{- include "castra.sref" (dict "root" . "cfg" $v.adminPassword "k" "keycloak-admin-password" "hook" false) | nindent 14 }}
+            - name: KC_DB
+              value: postgres
+            - name: KC_DB_URL
+              value: {{ printf "jdbc:postgresql://%s-postgres:5432/keycloak" $full | quote }}
+            - name: KC_DB_USERNAME
+              value: keycloak
+            - name: KC_DB_PASSWORD
+              {{- include "castra.sref" (dict "root" . "cfg" $v.databasePassword "k" "keycloak-db-password" "hook" false) | nindent 14 }}
+            # Behind the web proxy and the ingress, which end TLS and pass X-Forwarded-* headers.
+            - name: KC_HTTP_ENABLED
+              value: "true"
+            - name: KC_PROXY_HEADERS
+              value: xforwarded
+            - name: KC_HTTP_RELATIVE_PATH
+              value: /idp
+            - name: KC_HOSTNAME
+              value: {{ printf "%s/idp" $url | quote }}
+            # The admin console is not served on the public address (the web proxy blocks it). Reach it with
+            # kubectl port-forward to local port 8180, then open http://localhost:8180/idp/admin/.
+            - name: KC_HOSTNAME_ADMIN
+              value: "http://localhost:8180/idp"
+            - name: KC_HEALTH_ENABLED
+              value: "true"
+            - name: KC_HTTP_MANAGEMENT_RELATIVE_PATH
+              value: /
+            # Substituted into the realm import as ${...}.
+            - name: CASTRA_OIDC_CLIENT_SECRET
+              {{- include "castra.sref" (dict "root" . "cfg" .Values.signIn.oidc.clientSecret "k" "oidc-client-secret" "hook" false) | nindent 14 }}
+            - name: CASTRA_PUBLIC_URL
+              value: {{ $url | quote }}
+          ports:
+            - name: http
+              containerPort: 8080
+            - name: management
+              containerPort: 9000
+          startupProbe:
+            httpGet:
+              path: /health/ready
+              port: management
+            periodSeconds: 5
+            failureThreshold: 60
+          readinessProbe:
+            httpGet:
+              path: /health/ready
+              port: management
+            periodSeconds: 10
+            timeoutSeconds: 5
+          livenessProbe:
+            httpGet:
+              path: /health/live
+              port: management
+            periodSeconds: 20
+            timeoutSeconds: 5
+            failureThreshold: 6
+          resources:
+            {{- toYaml $v.resources | nindent 12 }}
+          securityContext:
+            {{- toYaml (omit $v.securityContext "runAsNonRoot" "runAsUser" "runAsGroup" "seccompProfile") | nindent 12 }}
+          volumeMounts:
+            - name: data
+              mountPath: /opt/keycloak/data
+            - name: realm
+              mountPath: /opt/keycloak/data/import
+              readOnly: true
+            - name: tmp
+              mountPath: /tmp
+      volumes:
+        - name: data
+          emptyDir: {}
+        - name: tmp
+          emptyDir: {}
+        - name: realm
+          configMap:
+            name: {{ $full }}-keycloak
+            items:
+              - key: castra-realm.json
+                path: castra-realm.json
+        - name: scripts
+          configMap:
+            name: {{ $full }}-keycloak
+            items:
+              - key: idp-db.sh
+                path: idp-db.sh
+      {{- include "castra.scheduling" . | nindent 6 }}
+{{- end }}

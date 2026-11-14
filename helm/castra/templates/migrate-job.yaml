@@ -1,0 +1,56 @@
+{{- /* Database migrations, as castra_owner. With a bundled Postgres it runs after the first install (the database has to
+       exist) and before each upgrade; with your own it runs before both. It also creates the first organisation. */ -}}
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: {{ include "castra.fullname" . }}-migrate
+  labels:
+    {{- include "castra.labels" . | nindent 4 }}
+    app.kubernetes.io/component: migrate
+  annotations:
+    helm.sh/hook: {{ include "castra.migrateHook" . }}
+    helm.sh/hook-weight: "0"
+    helm.sh/hook-delete-policy: before-hook-creation,hook-succeeded
+spec:
+  backoffLimit: {{ .Values.migrate.backoffLimit }}
+  activeDeadlineSeconds: {{ .Values.migrate.activeDeadlineSeconds }}
+  template:
+    metadata:
+      labels:
+        {{- include "castra.labels" . | nindent 8 }}
+        app.kubernetes.io/component: migrate
+      {{- with .Values.podAnnotations }}
+      annotations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+    spec:
+      restartPolicy: Never
+      serviceAccountName: {{ include "castra.serviceAccountName" . }}
+      automountServiceAccountToken: false
+      {{- include "castra.pullSecrets" . | nindent 6 }}
+      securityContext:
+        runAsNonRoot: true
+        seccompProfile:
+          type: RuntimeDefault
+      initContainers:
+        {{- include "castra.waitForDb" (dict "root" .) | nindent 8 }}
+      containers:
+        {{- include "castra.serverContainer" (dict "root" . "role" "migrate" "hook" true "noProbes" true "resources" .Values.migrate.resources) | nindent 8 }}
+      volumes:
+        - name: tmp
+          emptyDir: {}
+        {{- with .Values.identity.file }}
+        {{- if .configMap }}
+        - name: identity-file
+          configMap:
+            name: {{ .configMap }}
+        {{- else if .secret }}
+        - name: identity-file
+          secret:
+            secretName: {{ .secret }}
+        {{- end }}
+        {{- end }}
+        {{- with .Values.extraVolumes }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+      {{- include "castra.scheduling" . | nindent 6 }}
