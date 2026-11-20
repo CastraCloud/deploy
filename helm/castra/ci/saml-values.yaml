@@ -1,0 +1,16 @@
+# Used by scripts/validate-helm.sh. Staff sign in with SAML 2.0 (ADFS or Entra ID) instead of OIDC.
+secrets:
+  generate: true
+publicUrl: https://castra.example.com
+drawio:
+  mode: none
+signIn:
+  saml:
+    idpEntityId: http://adfs.example.com/adfs/services/trust
+    idpMetadataUrl: https://adfs.example.com/FederationMetadata/2007-06/FederationMetadata.xml
+    attributes:
+      groups: http://schemas.xmlsoap.org/claims/Group
+  bootstrap:
+    orgName: Example Org
+    orgSlug: example
+    admins: alice@example.com

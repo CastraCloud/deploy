@@ -2,6 +2,10 @@
 # passwords). One KEY=value per line. Anything left out takes the default shown, or is required where it says so.
 # Secrets that Castra generates (database passwords, session secret, storage keys) are never asked for.
 
+# Required. "yes" accepts the Castra Licence (LICENSE-castra.md, in this folder): free to use for your own
+# organisation, not to be offered to others as a hosted service. Read it first. Same as --accept-licence.
+ACCEPT_LICENCE=
+
 # Required. The release to install, for example 1.0.0.
 VERSION=
 
@@ -45,6 +49,12 @@ DRAWIO_MODE=host
 #DRAWIO_TLS_KEY_FILE=/etc/ssl/castra/diagrams-privkey.pem
 #DRAWIO_PUBLIC_URL=
 
+# --- Office previews ---------------------------------------------------------------------------------
+# none (default), bundled (Gotenberg in Compose: a large image and about 2 GB of memory) or external (your own
+# Gotenberg, with PREVIEWS_URL). It shows Word, Excel, PowerPoint and OpenDocument attachments as PDF.
+PREVIEWS=none
+#PREVIEWS_URL=http://gotenberg.internal:3000
+
 # --- Database ----------------------------------------------------------------------------------------
 # bundled (Postgres 17 in Compose) or external (your own Postgres 17 or newer).
 DATABASE=bundled
@@ -69,8 +79,10 @@ STORAGE=bundled
 #S3_PATH_STYLE=true
 
 # --- Sign-in -----------------------------------------------------------------------------------------
-# external (your own OpenID Connect provider) or bundled (Keycloak in Compose, at <address>/idp).
+# external (your own identity provider) or bundled (Keycloak in Compose, at <address>/idp).
 IDP=external
+# IDP=external only: oidc (OpenID Connect) or saml (SAML 2.0, for ADFS, Entra ID and others).
+IDP_PROTOCOL=oidc
 ORG_NAME=My organisation
 #ORG_SLUG=my-organisation
 # IDP=external:
@@ -81,6 +93,14 @@ ORG_NAME=My organisation
 #OIDC_GROUPS_CLAIM_ANS=groups
 #OIDC_REQUIRED_GROUPS_ANS=castra-users
 #BOOTSTRAP_ADMINS=alice
+# IDP=external with IDP_PROTOCOL=saml: the metadata address, and the provider's entityID (looked up from the metadata
+# when it can be fetched). The attributes are optional: empty keeps the ADFS and Entra ID defaults.
+#SAML_IDP_METADATA_URL_ANS=https://adfs.example.com/FederationMetadata/2007-06/FederationMetadata.xml
+#SAML_IDP_ENTITY_ID_ANS=http://adfs.example.com/adfs/services/trust
+#SAML_ATTR_USERNAME_ANS=
+#SAML_ATTR_GROUPS_ANS=
+#OIDC_REQUIRED_GROUPS_ANS=castra-users
+#BOOTSTRAP_ADMINS=alice@example.com
 # IDP=bundled: the first administrator. Without a password one is generated and saved to compose/first-admin.txt.
 #FIRST_ADMIN_USER=admin
 #FIRST_ADMIN_NAME=Castra Admin

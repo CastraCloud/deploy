@@ -12,6 +12,7 @@ signIn:
     orgName: Example Org
     orgSlug: example
     admins: alice
+  operators: alice,bob
 email:
   smtp:
     host: smtp.example.com
@@ -49,6 +50,8 @@ ingress:
     secretName: castra-tls
 drawio:
   host: drawio.example.com
+portal:
+  host: help.example.com
 extraEnv:
   - name: NODE_EXTRA_CA_CERTS
     value: /etc/castra-ca/ca.pem
@@ -60,3 +63,5 @@ extraVolumeMounts:
   - name: private-ca
     mountPath: /etc/castra-ca
     readOnly: true
+previews:
+  mode: bundled

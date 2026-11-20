@@ -79,7 +79,17 @@ valueFrom:
 
 {{/* Whether sign-in is on: an issuer, or the bundled Keycloak. */}}
 {{- define "castra.signIn" -}}
+{{- if or .Values.signIn.oidc.issuer .Values.keycloak.enabled .Values.signIn.saml.idpEntityId -}}true{{- end -}}
+{{- end -}}
+
+{{/* "true" when staff sign in with OIDC (your provider or the bundled Keycloak). */}}
+{{- define "castra.oidcOn" -}}
 {{- if or .Values.signIn.oidc.issuer .Values.keycloak.enabled -}}true{{- end -}}
+{{- end -}}
+
+{{/* "true" when staff sign in with SAML 2.0. */}}
+{{- define "castra.samlOn" -}}
+{{- if .Values.signIn.saml.idpEntityId -}}true{{- end -}}
 {{- end -}}
 
 {{/* Public URL, with no trailing slash. */}}
@@ -130,7 +140,8 @@ valueFrom:
 {{- $hook := .hook -}}
 {{- $full := include "castra.fullname" $root -}}
 {{- $url := include "castra.publicUrl" $root -}}
-{{- $signIn := include "castra.signIn" $root -}}
+{{- $signIn := include "castra.oidcOn" $root -}}
+{{- $saml := $v.signIn.saml -}}
 {{- $e := dict -}}
 {{- $put := dict "e" $e -}}
 {{- include "castra.put" (merge (dict "k" "LOG_LEVEL" "v" $v.logLevel) $put) -}}
@@ -138,6 +149,8 @@ valueFrom:
 {{- include "castra.put" (merge (dict "k" "CASTRA_HSTS" "v" $v.signIn.hsts) $put) -}}
 {{- include "castra.put" (merge (dict "k" "CASTRA_DEMO" "v" (ternary "true" "" $v.demo.enabled)) $put) -}}
 {{- include "castra.put" (merge (dict "k" "CASTRA_EVENT_TRANSPORT" "v" $v.events.transport) $put) -}}
+{{- /* The web proxy is one hop; when it believes the ingress's X-Forwarded-For, the ingress is a second. */ -}}
+{{- include "castra.put" (merge (dict "k" "TRUST_PROXY" "v" (ternary "2" "1" (ne (toString $v.web.trustedProxies) ""))) $put) -}}
 {{- if eq $v.events.transport "nats" -}}
 {{- $natsUrl := printf "nats://%s-nats:4222" $full -}}
 {{- if ne $v.nats.mode "bundled" -}}{{- $natsUrl = required "nats.url is required when nats.mode is external" $v.nats.url -}}{{- end -}}
@@ -158,10 +171,29 @@ valueFrom:
 {{- include "castra.put" (merge (dict "k" "OIDC_GROUPS_CLAIM" "v" $v.signIn.oidc.groupsClaim) $put) -}}
 {{- include "castra.put" (merge (dict "k" "OIDC_GROUP_PREFIX_FILTER" "v" $v.signIn.oidc.groupPrefixFilter) $put) -}}
 {{- include "castra.put" (merge (dict "k" "OIDC_REQUIRED_GROUPS" "v" $v.signIn.oidc.requiredGroups) $put) -}}
+{{- if include "castra.samlOn" $root -}}
+{{- if $signIn -}}{{- fail "SAML and OIDC are both set. An installation signs staff in with one or the other: clear signIn.saml.idpEntityId, or signIn.oidc.issuer and keycloak.enabled." -}}{{- end -}}
+{{- if not (or $saml.idpMetadataUrl $saml.idpMetadataFile) -}}{{- fail "signIn.saml needs idpMetadataUrl or idpMetadataFile." -}}{{- end -}}
+{{- if and $saml.idpMetadataUrl $saml.idpMetadataFile -}}{{- fail "Set signIn.saml.idpMetadataUrl or idpMetadataFile, not both." -}}{{- end -}}
+{{- if ne (not (include "castra.has" $saml.signingKey)) (not $saml.signingCert) -}}{{- fail "signIn.saml.signingKey and signingCert go together." -}}{{- end -}}
+{{- end -}}
+{{- include "castra.put" (merge (dict "k" "SAML_IDP_ENTITY_ID" "v" $saml.idpEntityId) $put) -}}
+{{- include "castra.put" (merge (dict "k" "SAML_IDP_METADATA_URL" "v" $saml.idpMetadataUrl) $put) -}}
+{{- include "castra.put" (merge (dict "k" "SAML_IDP_METADATA_FILE" "v" $saml.idpMetadataFile) $put) -}}
+{{- include "castra.put" (merge (dict "k" "SAML_SP_ENTITY_ID" "v" $saml.spEntityId) $put) -}}
+{{- include "castra.put" (merge (dict "k" "SAML_SP_SIGNING_CERT" "v" $saml.signingCert) $put) -}}
+{{- include "castra.put" (merge (dict "k" "SAML_ATTR_USERNAME" "v" $saml.attributes.username) $put) -}}
+{{- include "castra.put" (merge (dict "k" "SAML_ATTR_EMAIL" "v" $saml.attributes.email) $put) -}}
+{{- include "castra.put" (merge (dict "k" "SAML_ATTR_DISPLAY_NAME" "v" $saml.attributes.displayName) $put) -}}
+{{- include "castra.put" (merge (dict "k" "SAML_ATTR_GROUPS" "v" $saml.attributes.groups) $put) -}}
+{{- include "castra.put" (merge (dict "k" "SAML_ATTR_SUBJECT" "v" $saml.attributes.subject) $put) -}}
+{{- include "castra.put" (merge (dict "k" "SAML_EMAIL_VERIFIED" "v" $saml.emailVerified) $put) -}}
 {{- include "castra.put" (merge (dict "k" "CASTRA_BOOTSTRAP_ORG_NAME" "v" $v.signIn.bootstrap.orgName) $put) -}}
 {{- include "castra.put" (merge (dict "k" "CASTRA_BOOTSTRAP_ORG_SLUG" "v" $v.signIn.bootstrap.orgSlug) $put) -}}
 {{- include "castra.put" (merge (dict "k" "CASTRA_BOOTSTRAP_ADMINS" "v" $v.signIn.bootstrap.admins) $put) -}}
 {{- include "castra.put" (merge (dict "k" "CASTRA_BOOTSTRAP_JOIN_POLICY" "v" $v.signIn.bootstrap.joinPolicy) $put) -}}
+{{- include "castra.put" (merge (dict "k" "CASTRA_OPERATORS" "v" $v.signIn.operators) $put) -}}
+{{- include "castra.put" (merge (dict "k" "CASTRA_LICENCE_ACCEPTANCE" "v" $v.licence.acceptance) $put) -}}
 {{- include "castra.put" (merge (dict "k" "SESSION_COOKIE_SECURE" "v" $v.signIn.session.cookieSecure) $put) -}}
 {{- include "castra.put" (merge (dict "k" "SESSION_COOKIE_NAME" "v" $v.signIn.session.cookieName) $put) -}}
 {{- include "castra.put" (merge (dict "k" "SESSION_IDLE_TIMEOUT_SECONDS" "v" $v.signIn.session.idleTimeoutSeconds) $put) -}}
@@ -175,6 +207,9 @@ valueFrom:
 {{- include "castra.put" (merge (dict "k" "MAIL_DIGEST_WINDOW_SECONDS" "v" $v.email.digestWindowSeconds) $put) -}}
 {{- include "castra.put" (merge (dict "k" "MAIL_MAX_ATTEMPTS" "v" $v.email.maxAttempts) $put) -}}
 {{- include "castra.put" (merge (dict "k" "MAIL_REPLY_DOMAIN" "v" $v.email.replyDomain) $put) -}}
+{{- include "castra.put" (merge (dict "k" "MAIL_OAUTH_MICROSOFT_CLIENT_ID" "v" $v.email.oauth.microsoft.clientId) $put) -}}
+{{- include "castra.put" (merge (dict "k" "MAIL_OAUTH_MICROSOFT_TENANT" "v" $v.email.oauth.microsoft.tenant) $put) -}}
+{{- include "castra.put" (merge (dict "k" "MAIL_OAUTH_GOOGLE_CLIENT_ID" "v" $v.email.oauth.google.clientId) $put) -}}
 {{- include "castra.put" (merge (dict "k" "MAIL_REPLY_TOKEN_DAYS" "v" $v.email.replyTokenDays) $put) -}}
 {{- /* web push */ -}}
 {{- include "castra.put" (merge (dict "k" "WEB_PUSH_PUBLIC_KEY" "v" $v.push.publicKey) $put) -}}
@@ -201,9 +236,11 @@ valueFrom:
 {{- include "castra.put" (merge (dict "k" "API_TOKEN_MAX_DAYS" "v" $v.limits.apiTokenMaxDays) $put) -}}
 {{- include "castra.put" (merge (dict "k" "AUTOMATION_MAX_RUNS_PER_HOUR" "v" $v.limits.automationMaxRunsPerHour) $put) -}}
 {{- include "castra.put" (merge (dict "k" "SEARCH_EXPORT_MAX_ROWS" "v" $v.limits.searchExportMaxRows) $put) -}}
+{{- include "castra.put" (merge (dict "k" "DB_STATEMENT_TIMEOUT_MS" "v" $v.limits.dbStatementTimeoutMs) $put) -}}
 {{- include "castra.put" (merge (dict "k" "WEBHOOK_ALLOW_PRIVATE_CIDRS" "v" $v.webhooks.allowPrivateCidrs) $put) -}}
 {{- include "castra.put" (merge (dict "k" "WEBHOOK_DISABLE_AFTER" "v" $v.webhooks.disableAfter) $put) -}}
 {{- include "castra.put" (merge (dict "k" "IMPORT_ALLOW_PRIVATE_CIDRS" "v" $v.imports.allowPrivateCidrs) $put) -}}
+{{- include "castra.put" (merge (dict "k" "LINK_PREVIEW_ALLOW_PRIVATE_CIDRS" "v" $v.linkPreviews.allowPrivateCidrs) $put) -}}
 {{- include "castra.put" (merge (dict "k" "CASTRA_EXPORT_TTL_HOURS" "v" $v.advanced.exportTtlHours) $put) -}}
 {{- include "castra.put" (merge (dict "k" "CASTRA_IMPORT_MAX_BYTES" "v" $v.advanced.importMaxBytes) $put) -}}
 {{- include "castra.put" (merge (dict "k" "CASTRA_IMPORT_MAX_UNPACKED_BYTES" "v" $v.advanced.importMaxUnpackedBytes) $put) -}}
@@ -229,10 +266,23 @@ valueFrom:
 {{- include "castra.put" (merge (dict "k" "S3_BUCKET" "v" $v.storage.bucket) $put) -}}
 {{- include "castra.put" (merge (dict "k" "S3_FORCE_PATH_STYLE" "v" $v.storage.forcePathStyle) $put) -}}
 {{- include "castra.put" (merge (dict "k" "ATTACHMENT_MAX_BYTES" "v" $v.storage.attachmentMaxBytes) $put) -}}
+{{- if ne $v.previews.mode "none" -}}
+{{- if not (has $v.previews.mode (list "bundled" "external")) -}}{{- fail "previews.mode must be one of: none, bundled, external" -}}{{- end -}}
+{{- if and (eq $v.mode "full") (not $v.roles.preview.enabled) -}}{{- fail "previews need the preview role: set roles.preview.enabled=true, or previews.mode=none" -}}{{- end -}}
+{{- $conv := printf "http://%s-previews:3000" $full -}}
+{{- if eq $v.previews.mode "external" -}}{{- $conv = required "previews.external.url is required when previews.mode is external" $v.previews.external.url -}}{{- end -}}
+{{- include "castra.put" (merge (dict "k" "PREVIEW_URL" "v" $conv) $put) -}}
+{{- include "castra.put" (merge (dict "k" "PREVIEW_MAX_BYTES" "v" $v.previews.maxBytes) $put) -}}
+{{- include "castra.put" (merge (dict "k" "PREVIEW_TIMEOUT_SECONDS" "v" $v.previews.timeoutSeconds) $put) -}}
+{{- include "castra.put" (merge (dict "k" "PREVIEW_CONCURRENCY" "v" $v.previews.concurrency) $put) -}}
+{{- end -}}
 {{- if eq $v.valkey.mode "bundled" -}}
 {{- include "castra.put" (merge (dict "k" "VALKEY_URL" "v" (printf "redis://%s-valkey:6379" $full)) $put) -}}
 {{- end -}}
 {{- include "castra.put" (merge (dict "k" "DRAWIO_URL" "v" (include "castra.drawioUrl" $root)) $put) -}}
+{{- if $v.portal.host -}}
+{{- include "castra.put" (merge (dict "k" "CASTRA_PORTAL_DOMAIN" "v" $v.portal.host) $put) -}}
+{{- end -}}
 {{- /* output */ -}}
 - name: CASTRA_ROLE
   value: {{ .role | quote }}
@@ -244,7 +294,11 @@ valueFrom:
 - name: OIDC_CLIENT_SECRET
   {{- include "castra.sref" (dict "root" $root "cfg" $v.signIn.oidc.clientSecret "k" "oidc-client-secret" "hook" $hook) | nindent 2 }}
 {{- end }}
-{{- if or $signIn (include "castra.has" $v.signIn.session.secret) }}
+{{- if and (include "castra.samlOn" $root) (include "castra.has" $saml.signingKey) }}
+- name: SAML_SP_SIGNING_KEY
+  {{- include "castra.sref" (dict "root" $root "cfg" $saml.signingKey "k" "saml-signing-key" "hook" $hook) | nindent 2 }}
+{{- end }}
+{{- if or (include "castra.signIn" $root) (include "castra.has" $v.signIn.session.secret) }}
 - name: SESSION_SECRET
   {{- include "castra.sref" (dict "root" $root "cfg" $v.signIn.session.secret "k" "session-secret" "hook" $hook) | nindent 2 }}
 {{- end }}
@@ -255,6 +309,14 @@ valueFrom:
 {{- if include "castra.has" $v.email.smtp.password }}
 - name: SMTP_PASSWORD
   {{- include "castra.sref" (dict "root" $root "cfg" $v.email.smtp.password "k" "smtp-password" "hook" $hook) | nindent 2 }}
+{{- end }}
+{{- if include "castra.has" $v.email.oauth.microsoft.clientSecret }}
+- name: MAIL_OAUTH_MICROSOFT_CLIENT_SECRET
+  {{- include "castra.sref" (dict "root" $root "cfg" $v.email.oauth.microsoft.clientSecret "k" "mail-oauth-microsoft-client-secret" "hook" $hook) | nindent 2 }}
+{{- end }}
+{{- if include "castra.has" $v.email.oauth.google.clientSecret }}
+- name: MAIL_OAUTH_GOOGLE_CLIENT_SECRET
+  {{- include "castra.sref" (dict "root" $root "cfg" $v.email.oauth.google.clientSecret "k" "mail-oauth-google-client-secret" "hook" $hook) | nindent 2 }}
 {{- end }}
 {{- if include "castra.has" $v.email.tokenSecret }}
 - name: MAIL_TOKEN_SECRET

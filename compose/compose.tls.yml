@@ -3,7 +3,8 @@
 #   self-signed  Caddy's own certificate authority signs the certificate. Install its root certificate
 #                (compose/castra.sh root-cert) on the machines that use Castra.
 #   files        your certificate chain and key: set CASTRA_TLS_CERT_FILE and CASTRA_TLS_KEY_FILE (and,
-#                for a Draw.io name they do not cover, CASTRA_TLS_DRAWIO_CERT and CASTRA_TLS_DRAWIO_KEY).
+#                for a Draw.io name they do not cover, CASTRA_TLS_DRAWIO_CERT and CASTRA_TLS_DRAWIO_KEY, and
+#                for a portal name, CASTRA_TLS_PORTAL_CERT and CASTRA_TLS_PORTAL_KEY).
 #   acme         automatic certificates, from Let's Encrypt or any ACME server: see CASTRA_ACME_* in .env.example.
 #
 # Every mode needs CASTRA_DOMAIN (the name people use), CASTRA_HTTP_PORT=80, and ports 80 and 443 reachable by the
@@ -17,6 +18,8 @@ services:
       CASTRA_DRAWIO_HOST: ${CASTRA_DOMAIN}
       # Host form: the Draw.io name gets https on 443 like Castra (empty without CASTRA_DRAWIO_DOMAIN).
       CASTRA_DRAWIO_SITE: ${CASTRA_DRAWIO_DOMAIN:-}
+      # The same for the portal's host name (empty without CASTRA_PORTAL_DOMAIN).
+      CASTRA_PORTAL_SITE: ${CASTRA_PORTAL_DOMAIN:-}
       # Each is empty or one Caddy directive (see docker/tls/acme.caddy in the image).
       CASTRA_ACME_DIR_LINE: ${CASTRA_ACME_DIRECTORY:+dir ${CASTRA_ACME_DIRECTORY}}
       CASTRA_ACME_EMAIL_LINE: ${CASTRA_ACME_EMAIL:+email ${CASTRA_ACME_EMAIL}}
@@ -34,6 +37,9 @@ services:
       # Draw.io host form, files mode: its own pair if set, otherwise the Castra pair (which must cover both names).
       - ${CASTRA_TLS_DRAWIO_CERT:-${CASTRA_TLS_CERT_FILE:-./tls/none.pem}}:/etc/caddy/certs/drawio-cert.pem:ro
       - ${CASTRA_TLS_DRAWIO_KEY:-${CASTRA_TLS_KEY_FILE:-./tls/none.pem}}:/etc/caddy/certs/drawio-key.pem:ro
+      # The portal's host name, files mode: its own pair if set, otherwise the Castra pair (which must cover both names).
+      - ${CASTRA_TLS_PORTAL_CERT:-${CASTRA_TLS_CERT_FILE:-./tls/none.pem}}:/etc/caddy/certs/portal-cert.pem:ro
+      - ${CASTRA_TLS_PORTAL_KEY:-${CASTRA_TLS_KEY_FILE:-./tls/none.pem}}:/etc/caddy/certs/portal-key.pem:ro
       - ${CASTRA_ACME_CA_ROOT:-./tls/none.pem}:/etc/caddy/certs/acme-ca.pem:ro
     networks:
       default:

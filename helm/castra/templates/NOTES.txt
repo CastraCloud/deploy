@@ -5,6 +5,13 @@ Address: {{ include "castra.publicUrl" . }}
 Draw.io (diagram editing): {{ include "castra.drawioUrl" . }}
 {{- end }}
 
+{{- if ne .Values.licence.acceptance "off" }}
+
+Licence: Castra is free to use for your own organisation under the Castra Licence (LICENSE-castra.md in the deploy
+repository, https://github.com/CastraCloud/deploy). The first administrator to sign in is asked to accept it in the app.
+Until then nobody can use Castra.
+{{- end }}
+
 Watch it start (the database migration runs as a Job, and can take a minute):
   kubectl -n {{ .Release.Namespace }} get pods -l app.kubernetes.io/instance={{ .Release.Name }} -w
   kubectl -n {{ .Release.Namespace }} logs job/{{ include "castra.fullname" . }}-migrate

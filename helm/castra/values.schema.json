@@ -148,6 +148,30 @@
           },
           "additionalProperties": false
         },
+        "saml": {
+          "type": "object",
+          "properties": {
+            "idpEntityId": { "type": "string" },
+            "idpMetadataUrl": { "type": "string", "pattern": "^(https?://\\S+)?$" },
+            "idpMetadataFile": { "type": "string" },
+            "spEntityId": { "type": "string" },
+            "signingKey": { "$ref": "#/definitions/secretItem" },
+            "signingCert": { "type": "string" },
+            "attributes": {
+              "type": "object",
+              "properties": {
+                "username": { "type": "string" },
+                "email": { "type": "string" },
+                "displayName": { "type": "string" },
+                "groups": { "type": "string" },
+                "subject": { "type": "string" }
+              },
+              "additionalProperties": false
+            },
+            "emailVerified": { "$ref": "#/definitions/flag" }
+          },
+          "additionalProperties": false
+        },
         "session": {
           "type": "object",
           "properties": {
@@ -169,7 +193,15 @@
           },
           "additionalProperties": false
         },
+        "operators": { "type": "string" },
         "hsts": { "$ref": "#/definitions/flag" }
+      },
+      "additionalProperties": false
+    },
+    "licence": {
+      "type": "object",
+      "properties": {
+        "acceptance": { "type": "string", "enum": ["required", "off"] }
       },
       "additionalProperties": false
     },
@@ -185,6 +217,29 @@
             "password": { "$ref": "#/definitions/secretItem" },
             "from": { "type": "string" },
             "tls": { "type": "string", "enum": ["starttls", "tls", "none"] }
+          },
+          "additionalProperties": false
+        },
+        "oauth": {
+          "type": "object",
+          "properties": {
+            "microsoft": {
+              "type": "object",
+              "properties": {
+                "clientId": { "type": "string" },
+                "clientSecret": { "$ref": "#/definitions/secretItem" },
+                "tenant": { "type": "string" }
+              },
+              "additionalProperties": false
+            },
+            "google": {
+              "type": "object",
+              "properties": {
+                "clientId": { "type": "string" },
+                "clientSecret": { "$ref": "#/definitions/secretItem" }
+              },
+              "additionalProperties": false
+            }
           },
           "additionalProperties": false
         },
@@ -248,7 +303,8 @@
         "statusCacheSeconds": { "$ref": "#/definitions/intOrString" },
         "apiTokenMaxDays": { "$ref": "#/definitions/intOrString" },
         "automationMaxRunsPerHour": { "$ref": "#/definitions/intOrString" },
-        "searchExportMaxRows": { "$ref": "#/definitions/intOrString" }
+        "searchExportMaxRows": { "$ref": "#/definitions/intOrString" },
+        "dbStatementTimeoutMs": { "$ref": "#/definitions/intOrString" }
       },
       "additionalProperties": false
     },
@@ -262,6 +318,11 @@
       "additionalProperties": false
     },
     "imports": {
+      "type": "object",
+      "properties": { "allowPrivateCidrs": { "type": "string" } },
+      "additionalProperties": false
+    },
+    "linkPreviews": {
       "type": "object",
       "properties": { "allowPrivateCidrs": { "type": "string" } },
       "additionalProperties": false
@@ -371,6 +432,30 @@
       },
       "additionalProperties": false
     },
+    "previews": {
+      "type": "object",
+      "properties": {
+        "mode": { "type": "string", "enum": ["none", "bundled", "external"] },
+        "maxBytes": { "$ref": "#/definitions/intOrString" },
+        "timeoutSeconds": { "$ref": "#/definitions/intOrString" },
+        "concurrency": { "$ref": "#/definitions/intOrString" },
+        "bundled": {
+          "type": "object",
+          "properties": {
+            "image": { "type": "string" },
+            "networkPolicy": { "type": "boolean" },
+            "resources": { "type": "object" }
+          },
+          "additionalProperties": false
+        },
+        "external": {
+          "type": "object",
+          "properties": { "url": { "type": "string", "pattern": "^(https?://\\S+)?$" } },
+          "additionalProperties": false
+        }
+      },
+      "additionalProperties": false
+    },
     "storage": {
       "type": "object",
       "properties": {
@@ -401,6 +486,16 @@
             "securityContext": { "type": "object" }
           },
           "additionalProperties": false
+        }
+      },
+      "additionalProperties": false
+    },
+    "portal": {
+      "type": "object",
+      "properties": {
+        "host": {
+          "type": "string",
+          "pattern": "^$|^[a-z0-9]([a-z0-9-]*[a-z0-9])?(\\.[a-z0-9]([a-z0-9-]*[a-z0-9])?)+$"
         }
       },
       "additionalProperties": false
@@ -472,6 +567,7 @@
         "parentRefs": { "type": "array", "items": { "type": "object" } },
         "hostnames": { "type": "array", "items": { "type": "string" } },
         "drawioHostnames": { "type": "array", "items": { "type": "string" } },
+        "portalHostnames": { "type": "array", "items": { "type": "string" } },
         "timeouts": { "type": "object" }
       },
       "additionalProperties": false

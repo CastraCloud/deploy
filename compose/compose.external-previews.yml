@@ -1,0 +1,7 @@
+# Use a Gotenberg you already run instead of the bundled one. Add it after compose.yml and set PREVIEW_URL in .env
+# to its address on a network the server can reach (for example http://gotenberg.internal:3000). The bundled
+# converter service is switched off. Gotenberg needs --api-disable-download-from and --chromium-disable-routes (see
+# "Office previews" in the README), and no route to the internet.
+services:
+  converter:
+    profiles: !override [bundled-previews-off]

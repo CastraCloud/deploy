@@ -10,20 +10,21 @@ before you rely on it.
 
 ## What it installs
 
-| Piece                          | Kind                  | Notes                                                                                       |
-| ------------------------------ | --------------------- | ------------------------------------------------------------------------------------------- |
-| `migrate`                      | Job (Helm hook)       | Runs migrations as `castra_owner`, and creates the first organisation.                      |
-| `app` or one Deployment a role | Deployments, Services | `mode: minimal` (one all-in-one process) or `mode: full` (api, collab, realtime and so on). |
-| `web`                          | Deployment, Service   | Caddy: the web apps, `/api`, `/auth`, `/collab`, the mail-in webhook and `/idp`.            |
-| Ingress or HTTPRoute           | Ingress, HTTPRoute    | Optional. TLS is ended here, not in the web pod.                                            |
-| Postgres 17                    | StatefulSet           | Bundled or your own. The chart applies `roles.sql` on first start.                          |
-| Valkey                         | StatefulSet           | Bundled or your own Valkey or Redis.                                                        |
-| SeaweedFS                      | StatefulSet           | Bundled S3 storage, or your own bucket.                                                     |
-| Draw.io                        | Deployment            | Bundled by default: diagram editing needs it.                                               |
-| NATS                           | StatefulSet           | Only with `events.transport: nats`.                                                         |
-| Keycloak (production mode)     | Deployment            | Optional, for people with no identity provider. Served at `/idp`.                           |
-| Postgres backup                | CronJob               | Optional.                                                                                   |
-| ServiceMonitor                 | ServiceMonitor        | Optional, for the Prometheus operator.                                                      |
+| Piece                          | Kind                      | Notes                                                                                                   |
+| ------------------------------ | ------------------------- | ------------------------------------------------------------------------------------------------------- |
+| `migrate`                      | Job (Helm hook)           | Runs migrations as `castra_owner`, and creates the first organisation.                                  |
+| `app` or one Deployment a role | Deployments, Services     | `mode: minimal` (one all-in-one process) or `mode: full` (api, collab, realtime and so on).             |
+| `web`                          | Deployment, Service       | Caddy: the web apps, `/api`, `/auth`, `/collab`, the mail-in webhook and `/idp`.                        |
+| Ingress or HTTPRoute           | Ingress, HTTPRoute        | Optional. TLS is ended here, not in the web pod.                                                        |
+| Postgres 17                    | StatefulSet               | Bundled or your own. The chart applies `roles.sql` on first start.                                      |
+| Valkey                         | StatefulSet               | Bundled or your own Valkey or Redis.                                                                    |
+| SeaweedFS                      | StatefulSet               | Bundled S3 storage, or your own bucket.                                                                 |
+| Draw.io                        | Deployment                | Bundled by default: diagram editing needs it.                                                           |
+| Gotenberg (Office previews)    | Deployment, NetworkPolicy | Optional: `previews.mode: bundled`. A large image; it can reach nothing and only the server reaches it. |
+| NATS                           | StatefulSet               | Only with `events.transport: nats`.                                                                     |
+| Keycloak (production mode)     | Deployment                | Optional, for people with no identity provider. Served at `/idp`.                                       |
+| Postgres backup                | CronJob                   | Optional.                                                                                               |
+| ServiceMonitor                 | ServiceMonitor            | Optional, for the Prometheus operator.                                                                  |
 
 Images are pinned to the same exact versions as `compose/compose.yml`. Castra's own images default
 to the chart's `appVersion`; set `image.server.tag` and `image.web.tag` (or a `digest`) to pin them.
@@ -48,6 +49,8 @@ helm install castra ./helm/castra --namespace castra --create-namespace \
   --set signIn.bootstrap.admins=admin1
 ```
 
+Castra asks the first administrator to accept the Castra Licence (`LICENSE-castra.md`) in the app, and until then nobody can use it. `licence.acceptance: off` switches that off for an installation covered by other terms.
+
 For anything real, put your settings in a values file and keep it in version control (without
 secrets), and use `existingSecret` for every secret:
 
@@ -60,6 +63,18 @@ Two names need DNS records pointing at your ingress: the Castra address and the 
 cannot act as it. With a Gateway or your own load balancer, set `publicUrl` and `drawio.publicUrl`
 yourself. To use a Draw.io you already run, set `drawio.mode: external` and `drawio.external.url`;
 to have no diagram editing, `drawio.mode: none`.
+
+The portal can have a name of its own too: set `portal.host` (for example `help.example.com`, with its own DNS
+record) and the Ingress routes it to the portal, served at the root, for the first organisation. It stays at `/portal/`
+on the main address as well. With a Gateway, `gateway.portalHostnames` routes it (default: `portal.host`).
+
+Office previews (Word, Excel, PowerPoint and OpenDocument files shown as PDF) are off by default. Set
+`previews.mode: bundled` to run Gotenberg (pinned to an exact version, MIT licence) in its own Deployment, about
+2 GB of memory, or `previews.mode: external` and `previews.external.url` for one you run. The chart sets
+`PREVIEW_URL` for the server, and in `mode: full` the `preview` role must stay enabled. The bundled converter is
+started with the options that stop it fetching addresses or calling back, and a NetworkPolicy
+(`previews.bundled.networkPolicy`, on by default; it needs a network plugin that enforces it) lets only the
+Castra pods in and nothing out. `previews.maxBytes`, `timeoutSeconds` and `concurrency` set the limits.
 
 The web proxy lets a page frame only Castra itself and the Draw.io address. If pages embed other sites (Administration, Embedded sites), put the sources that page shows in `web.frameSrc`, space separated.
 
@@ -78,12 +93,13 @@ They follow `compose/.env.example` name for name, with the same defaults:
 | ------------------------------------------------------ | ---------------------------------------------------------------------------- |
 | `mode`, `publicUrl`, `logLevel`                        | minimal or full, the address people use, log level                           |
 | `signIn`                                               | OIDC issuer and client, session secret, first organisation and admins, HSTS  |
-| `email`                                                | SMTP, digests, reply domain and tokens                                       |
+| `email`                                                | SMTP, mailbox OAuth, digests, reply domain and tokens                        |
 | `inboundEmail`                                         | IMAP mailbox, the mail webhook secret, size and rate limits, SPF/DKIM/DMARC  |
 | `limits`, `webhooks`, `imports`                        | rate limits, API token lifetime, webhook and importer private ranges (CIDRs) |
 | `metrics`                                              | `/metrics` and the ServiceMonitor                                            |
 | `events`, `nats`                                       | `outbox` (Postgres) or `nats` event transport                                |
 | `database`, `valkey`, `storage`, `drawio`              | bundled or external for each                                                 |
+| `previews`                                             | Office previews: `none` (default), `bundled` Gotenberg or `external` URL     |
 | `keycloak`                                             | the bundled identity provider                                                |
 | `ingress`, `gateway`                                   | exposing Castra                                                              |
 | `backup`                                               | the Postgres dump CronJob                                                    |
@@ -106,8 +122,8 @@ signIn:
 ```
 
 The secrets are: `database.ownerPassword`, `database.appPassword`, `database.bundled.superuserPassword`,
-`signIn.session.secret`, `signIn.oidc.clientSecret`, `webhooks.encryptionKey`, `storage.accessKey` and
-`secretKey`, `email.smtp.password`, `email.tokenSecret`, `push.privateKey`, `inboundEmail.imap.password`,
+`signIn.session.secret`, `signIn.oidc.clientSecret`, `signIn.saml.signingKey`, `webhooks.encryptionKey`, `storage.accessKey` and
+`secretKey`, `email.smtp.password`, `email.oauth.microsoft.clientSecret`, `email.oauth.google.clientSecret`, `email.tokenSecret`, `push.privateKey`, `inboundEmail.imap.password`,
 `inboundEmail.webhook.secret`, `metrics.token`, `valkey.external.url` (it holds a password),
 `keycloak.adminPassword` and `keycloak.databasePassword`, and the backup ones.
 
@@ -137,6 +153,13 @@ Back up your secrets separately from your backups. The backup job never copies t
 Set `signIn.oidc.issuer`, `clientId`, the client secret, and register `<publicUrl>/auth/callback`
 with your provider. The Castra pods themselves must be able to reach the issuer URL. See "Sign-in" in
 the main README for the settings each provider needs.
+
+**SAML 2.0** (ADFS, Entra ID and others) instead of OIDC: set `signIn.saml.idpEntityId` and
+`signIn.saml.idpMetadataUrl` (or `idpMetadataFile`, a path you mount with `extraVolumes`), leave `signIn.oidc` empty and
+`keycloak.enabled` false, and give your provider `<publicUrl>/auth/saml/metadata`. The chart refuses both together.
+`signIn.saml.signingKey` (a secret) and `signingCert` are optional and go together; `attributes` rename the username,
+email, display name, groups and subject attributes. `signIn.oidc.groupPrefixFilter` and `requiredGroups` apply to SAML too.
+The ADFS and Entra ID steps are under "Sign in with SAML" in the main README.
 
 **Bundled Keycloak** (`keycloak.enabled: true`). Keycloak runs in production mode and is served by
 the web pod at `<publicUrl>/idp`. Its realm `castra` has one confidential client and no users.

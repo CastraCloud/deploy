@@ -26,6 +26,13 @@ target="${args[1]:-$PWD/castra}"
 command -v docker > /dev/null 2>&1 || die "docker is not installed"
 docker info > /dev/null 2>&1 || die "cannot talk to the Docker daemon"
 
+# The same notice install.sh shows. Accepting happens in install.sh.
+say "Castra is free to install and use for your own organisation, under the Castra Licence."
+say "It is not open source, and it may not be offered to others as a hosted service."
+say "The full text is in LICENSE-castra.md in this folder, and at"
+say "https://github.com/CastraCloud/deploy/blob/main/LICENSE-castra.md"
+say ""
+
 # 1. The archive as transferred.
 if [ -f "$archive.sha256" ]; then
   (cd "$(dirname "$archive")" && sha256sum --check --quiet "$(basename "$archive").sha256") \
@@ -64,7 +71,7 @@ done < <(sed -n 's/^image=//p' "$dir/images.list")
 # 5. Deploy files. compose/.env is never in the bundle, and an existing one stays.
 mkdir -p "$target"
 cp -R "$dir/deploy/." "$target/"
-chmod +x "$target/install.sh" "$target/load.sh" "$target/bundle.sh" "$target/compose/castra.sh" "$target/compose/backup.sh" "$target/compose/restore.sh" 2> /dev/null || true
+chmod +x "$target/install.sh" "$target/load.sh" "$target/bundle.sh" "$target/compose/castra.sh" "$target/compose/backup.sh" "$target/compose/restore.sh" "$target/compose/restore-drill.sh" 2> /dev/null || true
 
 say ""
 say "Loaded Castra $(sed -n 's/^version=//p' "$dir/images.list") ($want) into $target"

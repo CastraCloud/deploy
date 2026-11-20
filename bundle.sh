@@ -48,6 +48,13 @@ docker info > /dev/null 2>&1 || die "cannot talk to the Docker daemon"
 [ -f "$compose_dir/compose.yml" ] || die "compose/compose.yml not found next to bundle.sh"
 mkdir -p "$out"
 
+# The same notice install.sh shows. Accepting happens in install.sh.
+say "Castra is free to install and use for your own organisation, under the Castra Licence."
+say "It is not open source, and it may not be offered to others as a hosted service."
+say "The full text is in LICENSE-castra.md in this folder, and at"
+say "https://github.com/CastraCloud/deploy/blob/main/LICENSE-castra.md"
+say ""
+
 work="$(mktemp -d)"
 trap 'rm -rf "$work"' EXIT
 

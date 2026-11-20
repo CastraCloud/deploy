@@ -26,6 +26,8 @@ CASTRA_PUBLIC_URL=https://castra.example.org
 # same port as Castra and tells the two apart by Host, so nothing listens on a second port. DRAWIO_URL follows.
 CASTRA_DRAWIO_DOMAIN=castra-diagrams.example.org
 CASTRA_DRAWIO_BIND=127.0.0.1
+# Optional: the portal on its own host name (help.example.org), served the same way as Draw.io's name above.
+# CASTRA_PORTAL_DOMAIN=help.example.org
 # Believe X-Forwarded-For from nginx. nginx reaches the container through Docker's bridge network, so it shows up
 # with a private address; private_ranges covers that.
 CASTRA_TRUSTED_PROXIES=private_ranges

@@ -36,6 +36,7 @@ Usage: ./install.sh [options]
   --set KEY=VALUE     give one answer on the command line (repeatable)
   --version VERSION   the Castra release to install, for example 1.0.0 (same as --set VERSION=...)
   --domain NAME       the public address people use, for example castra.example.com (same as --set DOMAIN=...)
+  --accept-licence    accept the Castra Licence without being asked (same as --set ACCEPT_LICENCE=yes)
   --yes               never ask: use answers and defaults, stop if something required is missing
   --offline           the images are already loaded (see load.sh): do not pull and do not verify signatures
   --skip-pull         do not pull images
@@ -73,6 +74,7 @@ while [ $# -gt 0 ]; do
       shift 2 ;;
     --version) [ $# -ge 2 ] || die "--version needs a value"; ans[VERSION]="$2"; shift 2 ;;
     --domain) [ $# -ge 2 ] || die "--domain needs a value"; ans[DOMAIN]="$2"; shift 2 ;;
+    --accept-licence) ans[ACCEPT_LICENCE]=yes; shift ;;
     --yes | -y) interactive=0; shift ;;
     --offline) offline=1; skip_pull=1; skip_verify=1; shift ;;
     --skip-pull) skip_pull=1; shift ;;
@@ -270,6 +272,32 @@ create_first_admin() {
   ' || return 1
 }
 
+# ---------------------------------------------------------------- licence
+
+licence_notice() {
+  say "Castra is free to install and use for your own organisation, under the Castra Licence."
+  say "It is not open source, and it may not be offered to others as a hosted service."
+  say "The full text is in LICENSE-castra.md in this folder, and at"
+  say "https://github.com/CastraCloud/deploy/blob/main/LICENSE-castra.md"
+}
+
+# Nothing is written before this passes. An administrator is also asked to accept the licence in the app on first sign-in.
+accept_licence() {
+  licence_notice
+  say ""
+  if [ -n "${ans[ACCEPT_LICENCE]+x}" ]; then
+    [ "${ans[ACCEPT_LICENCE]}" = yes ] || die "ACCEPT_LICENCE must be 'yes' to install Castra. Read LICENSE-castra.md first"
+    say "Licence accepted (ACCEPT_LICENCE=yes)."
+  elif [ "$interactive" = 1 ]; then
+    local reply
+    read -r -p "Type yes to accept the Castra Licence and continue: " reply
+    [ "$reply" = yes ] || die "the licence was not accepted, so nothing was installed"
+  else
+    die "the Castra Licence needs accepting: read LICENSE-castra.md, then set ACCEPT_LICENCE=yes in the answers or pass --accept-licence"
+  fi
+  say ""
+}
+
 # ---------------------------------------------------------------- start
 
 [ -f "$compose_dir/compose.yml" ] || die "compose/compose.yml not found next to install.sh"
@@ -277,6 +305,8 @@ create_first_admin() {
 
 say "Castra installer"
 say ""
+
+accept_licence
 
 [ "$skip_checks" = 1 ] || check_host
 
@@ -466,6 +496,32 @@ if [ "$keep_env" = 0 ]; then
     set_env DRAWIO_URL "$drawio_url"
     set_env CASTRA_FRAME_SRC "$(printf '%s' "$drawio_url" | sed -E 's#^(https?://[^/]+).*#\1#')"
   fi
+
+  # ---- the portal on its own host name (optional)
+  # People who raise requests then reach the portal at the root of that name, and can sign in with an emailed link.
+  if [[ "$DOMAIN" == *.* && ! "$DOMAIN" =~ ^[0-9.]+$ && "$DOMAIN" != localhost ]]; then
+    ask PORTAL_DOMAIN "Host name for the portal, such as help.${DOMAIN#*.} (empty: the portal stays at $public_url/portal/)" ""
+    if [ -n "$PORTAL_DOMAIN" ]; then
+      [[ "$PORTAL_DOMAIN" =~ ^[A-Za-z0-9]([A-Za-z0-9.-]*[A-Za-z0-9])?$ && "$PORTAL_DOMAIN" == *.* ]] || die "PORTAL_DOMAIN must be a host name, with no scheme or port: $PORTAL_DOMAIN"
+      PORTAL_DOMAIN="$(printf '%s' "$PORTAL_DOMAIN" | tr '[:upper:]' '[:lower:]')"
+      [ "$PORTAL_DOMAIN" != "$DOMAIN" ] || die "PORTAL_DOMAIN must differ from DOMAIN"
+      [ "$PORTAL_DOMAIN" != "${DRAWIO_DOMAIN:-}" ] || die "PORTAL_DOMAIN must differ from DRAWIO_DOMAIN"
+      set_env CASTRA_PORTAL_DOMAIN "$PORTAL_DOMAIN"
+      if [ "$TLS_MODE" = files ]; then
+        ask PORTAL_TLS_CERT_FILE "Certificate chain for $PORTAL_DOMAIN, if the one above does not cover it (empty: use the same)" ""
+        if [ -n "$PORTAL_TLS_CERT_FILE" ]; then
+          ask PORTAL_TLS_KEY_FILE "Private key for $PORTAL_DOMAIN" ""; require PORTAL_TLS_KEY_FILE "Portal key file"
+          [[ "$PORTAL_TLS_CERT_FILE" = /* && "$PORTAL_TLS_KEY_FILE" = /* ]] || die "give absolute paths for the portal certificate and key"
+          [ -r "$PORTAL_TLS_CERT_FILE" ] || die "cannot read $PORTAL_TLS_CERT_FILE"
+          [ -r "$PORTAL_TLS_KEY_FILE" ] || die "cannot read $PORTAL_TLS_KEY_FILE"
+          set_env CASTRA_TLS_PORTAL_CERT "$PORTAL_TLS_CERT_FILE"
+          set_env CASTRA_TLS_PORTAL_KEY "$PORTAL_TLS_KEY_FILE"
+        fi
+      fi
+      [ "$TLS_MODE" != off ] || [ "$proxy_https" != yes ] || say "Your proxy must also serve $PORTAL_DOMAIN over https and pass it to port $HTTP_PORT here (see docs/behind-a-proxy.md)."
+      say "Point a DNS record for $PORTAL_DOMAIN where $DOMAIN points. Then add the portal's sign-up policy under Administration, Portal."
+    fi
+  fi
   [ "$skip_checks" = 1 ] || check_ports "${ports[@]}"
 
   ask_choice PROFILE "Run every part in one process (minimal) or each on its own (full)?" minimal minimal full
@@ -525,10 +581,11 @@ if [ "$keep_env" = 0 ]; then
   fi
 
   # ---- sign-in
-  ask_choice IDP "Sign-in: your own OpenID Connect provider (external), or run the bundled Keycloak (bundled)?" external external bundled
+  ask_choice IDP "Sign-in: your own identity provider (external), or run the bundled Keycloak (bundled)?" external external bundled
+  IDP_PROTOCOL=oidc
+  [ "$IDP" != external ] || ask_choice IDP_PROTOCOL "Your identity provider speaks OpenID Connect (oidc) or SAML 2.0, for ADFS and others (saml)?" oidc oidc saml
   set_env SESSION_SECRET "$(rand_hex 48)"
   set_env KEYCLOAK_ADMIN_PASSWORD "$(rand_hex 18)"
-  set_env OIDC_REDIRECT_URI "$public_url/auth/callback"
   ask ORG_NAME "Name of your organisation" "My organisation"
   org_slug="$(printf '%s' "$ORG_NAME" | tr '[:upper:]' '[:lower:]' | sed -e 's/[^a-z0-9]\{1,\}/-/g' -e 's/^-//' -e 's/-$//')"
   ask ORG_SLUG "Short name for it (letters, numbers, dashes)" "${org_slug:-main}"
@@ -540,6 +597,7 @@ if [ "$keep_env" = 0 ]; then
     [ "$DATABASE" = bundled ] || die "the bundled sign-in keeps its data in the bundled Postgres. Choose DATABASE=bundled, or use your own provider"
     profiles+=(identity)
     oidc_secret="$(rand_hex 24)"
+    set_env OIDC_REDIRECT_URI "$public_url/auth/callback"
     set_env OIDC_ISSUER "$public_url/idp/realms/castra"
     set_env OIDC_CLIENT_ID castra
     set_env OIDC_CLIENT_SECRET "$oidc_secret"
@@ -549,7 +607,26 @@ if [ "$keep_env" = 0 ]; then
     ask FIRST_ADMIN_EMAIL "Their email address" ""; require FIRST_ADMIN_EMAIL "Their email address"
     ask_secret FIRST_ADMIN_PASSWORD "Their password, at least 12 characters (empty: generate one, saved to compose/first-admin.txt)"
     set_env CASTRA_BOOTSTRAP_ADMINS "$FIRST_ADMIN_USER"
+  elif [ "$IDP_PROTOCOL" = saml ]; then
+    ask SAML_IDP_METADATA_URL_ANS "Metadata URL of your identity provider, for example https://adfs.example.com/FederationMetadata/2007-06/FederationMetadata.xml" ""; require SAML_IDP_METADATA_URL_ANS "Metadata URL"
+    case "$SAML_IDP_METADATA_URL_ANS" in http://* | https://*) ;; *) die "the metadata address must start with https:// (or http://)" ;; esac
+    saml_entity_default=""
+    if [ -z "${ans[SAML_IDP_ENTITY_ID_ANS]+x}" ] && command -v curl > /dev/null 2>&1; then
+      saml_entity_default="$(curl -fsS --max-time 10 "$SAML_IDP_METADATA_URL_ANS" 2> /dev/null | tr '\n' ' ' | sed -n 's/.*<[A-Za-z:]*EntityDescriptor[^>]* entityID="\([^"]*\)".*/\1/p' | head -n 1 || true)"
+    fi
+    ask SAML_IDP_ENTITY_ID_ANS "Entity ID of your identity provider (the entityID in its metadata)" "$saml_entity_default"; require SAML_IDP_ENTITY_ID_ANS "Entity ID"
+    ask SAML_ATTR_USERNAME_ANS "SAML attribute that holds the username (empty: the ADFS and Entra ID defaults)" ""
+    ask SAML_ATTR_GROUPS_ANS "SAML attribute that holds group names (empty: the defaults)" ""
+    ask OIDC_REQUIRED_GROUPS_ANS "Only allow members of these groups, comma separated (empty: everyone)" ""
+    ask BOOTSTRAP_ADMINS "Username(s) of the first administrators, comma separated (as your provider sends them, for ADFS usually user@domain)" ""; require BOOTSTRAP_ADMINS "First administrator"
+    set_env SAML_IDP_METADATA_URL "$SAML_IDP_METADATA_URL_ANS"
+    set_env SAML_IDP_ENTITY_ID "$SAML_IDP_ENTITY_ID_ANS"
+    [ -z "$SAML_ATTR_USERNAME_ANS" ] || set_env SAML_ATTR_USERNAME "$SAML_ATTR_USERNAME_ANS"
+    [ -z "$SAML_ATTR_GROUPS_ANS" ] || set_env SAML_ATTR_GROUPS "$SAML_ATTR_GROUPS_ANS"
+    set_env OIDC_REQUIRED_GROUPS "$OIDC_REQUIRED_GROUPS_ANS"
+    set_env CASTRA_BOOTSTRAP_ADMINS "$BOOTSTRAP_ADMINS"
   else
+    set_env OIDC_REDIRECT_URI "$public_url/auth/callback"
     ask OIDC_ISSUER_ANS "Issuer URL of your provider (see README, \"Your own identity provider\")" ""; require OIDC_ISSUER_ANS "Issuer URL"
     ask OIDC_CLIENT_ID_ANS "Client ID" castra
     ask_secret OIDC_CLIENT_SECRET_ANS "Client secret"; require OIDC_CLIENT_SECRET_ANS "Client secret"
@@ -612,6 +689,21 @@ if [ "$keep_env" = 0 ]; then
     profiles+=(nats)
     set_env CASTRA_EVENT_TRANSPORT nats
   fi
+
+  # ---- Office previews
+  ask_choice PREVIEWS "Office previews (Word, Excel, PowerPoint and OpenDocument files shown in the browser as PDF; the bundled converter needs about 2 GB of memory and a large image): the bundled converter, your own Gotenberg, or none?" none bundled external none
+  case "$PREVIEWS" in
+    bundled)
+      profiles+=(previews)
+      set_env PREVIEW_URL http://converter:3000
+      ;;
+    external)
+      files+=(compose.external-previews.yml)
+      ask PREVIEWS_URL "Address of your Gotenberg, reachable from the server only (for example http://gotenberg.internal:3000)" ""; require PREVIEWS_URL "Gotenberg address"
+      [[ "$PREVIEWS_URL" =~ ^https?://[^[:space:]]+$ ]] || die "the Gotenberg address must start with http:// or https://: $PREVIEWS_URL"
+      set_env PREVIEW_URL "$PREVIEWS_URL"
+      ;;
+  esac
 
   # What castra.sh starts.
   [ "${#files[@]}" = 0 ] || set_env CASTRA_COMPOSE_FILES "${files[*]}"
@@ -748,8 +840,13 @@ if [ "$has_identity" = 1 ] && [ "$keep_env" = 0 ]; then
   say "  2. Add more people in the identity provider's admin console: open an SSH tunnel to this host's port $(env_get KEYCLOAK_HTTP_PORT), then browse to http://localhost:8180/idp/admin/ (realm castra). Admin name and password: KEYCLOAK_ADMIN and KEYCLOAK_ADMIN_PASSWORD in compose/.env."
 else
   say "  1. Sign in at $public_url/ with an account your identity provider knows. Accounts listed in CASTRA_BOOTSTRAP_ADMINS become administrators of the first organisation."
-  say "     Your provider must have this redirect URL registered: $public_url/auth/callback"
+  if [ -n "$(env_get SAML_IDP_ENTITY_ID)" ]; then
+    say "     Add Castra to your identity provider as a relying party or enterprise application: give it $public_url/auth/saml/metadata (README, \"Sign in with SAML\")"
+  else
+    say "     Your provider must have this redirect URL registered: $public_url/auth/callback"
+  fi
 fi
+say "  - The first administrator to sign in is asked to accept the Castra Licence in the app. Until then nobody can use Castra."
 [ -z "$root_cert_note" ] || say "  - $root_cert_note"
 say "  - Set up backups before you rely on this (README, \"Backups\"): compose/backup.sh"
 say "  - Day to day: compose/castra.sh ps | logs -f | pull | up -d. Upgrading: UPGRADING.md"

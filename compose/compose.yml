@@ -23,10 +23,24 @@ x-server-env: &server-env # Every role except migrate connects as castra_app, wh
   OIDC_GROUPS_CLAIM: ${OIDC_GROUPS_CLAIM:-groups}
   OIDC_GROUP_PREFIX_FILTER: ${OIDC_GROUP_PREFIX_FILTER:-}
   OIDC_REQUIRED_GROUPS: ${OIDC_REQUIRED_GROUPS:-}
+  SAML_IDP_METADATA_URL: ${SAML_IDP_METADATA_URL:-}
+  SAML_IDP_METADATA_FILE: ${SAML_IDP_METADATA_FILE:-}
+  SAML_IDP_ENTITY_ID: ${SAML_IDP_ENTITY_ID:-}
+  SAML_SP_ENTITY_ID: ${SAML_SP_ENTITY_ID:-}
+  SAML_SP_SIGNING_KEY: ${SAML_SP_SIGNING_KEY:-}
+  SAML_SP_SIGNING_CERT: ${SAML_SP_SIGNING_CERT:-}
+  SAML_ATTR_USERNAME: ${SAML_ATTR_USERNAME:-}
+  SAML_ATTR_EMAIL: ${SAML_ATTR_EMAIL:-}
+  SAML_ATTR_DISPLAY_NAME: ${SAML_ATTR_DISPLAY_NAME:-}
+  SAML_ATTR_GROUPS: ${SAML_ATTR_GROUPS:-}
+  SAML_ATTR_SUBJECT: ${SAML_ATTR_SUBJECT:-}
+  SAML_EMAIL_VERIFIED: ${SAML_EMAIL_VERIFIED:-}
   CASTRA_BOOTSTRAP_ORG_NAME: ${CASTRA_BOOTSTRAP_ORG_NAME:-}
   CASTRA_BOOTSTRAP_ORG_SLUG: ${CASTRA_BOOTSTRAP_ORG_SLUG:-}
   CASTRA_BOOTSTRAP_ADMINS: ${CASTRA_BOOTSTRAP_ADMINS:-}
   CASTRA_BOOTSTRAP_JOIN_POLICY: ${CASTRA_BOOTSTRAP_JOIN_POLICY:-same_issuer}
+  CASTRA_OPERATORS: ${CASTRA_OPERATORS:-}
+  CASTRA_LICENCE_ACCEPTANCE: ${CASTRA_LICENCE_ACCEPTANCE:-required}
   CASTRA_DEMO: ${CASTRA_DEMO:-}
   # Identity sources from a file (see "Identity sources" in the README). The file is mounted into migrate only.
   CASTRA_IDENTITY_CONFIG: ${CASTRA_IDENTITY_CONFIG:-}
@@ -45,12 +59,16 @@ x-server-env: &server-env # Every role except migrate connects as castra_app, wh
   RATE_LIMIT_AUTH_MAX: ${RATE_LIMIT_AUTH_MAX:-30}
   RATE_LIMIT_WINDOW_SECONDS: ${RATE_LIMIT_WINDOW_SECONDS:-60}
   RATE_LIMIT_TOKEN_MAX: ${RATE_LIMIT_TOKEN_MAX:-600}
+  # Empty: one proxy (the bundled web proxy). With CASTRA_TRUSTED_PROXIES set, your own proxy in front makes two.
+  TRUST_PROXY: ${TRUST_PROXY:-${CASTRA_TRUSTED_PROXIES:+2}}
+  DB_STATEMENT_TIMEOUT_MS: ${DB_STATEMENT_TIMEOUT_MS:-30000}
   STATUS_RATE_LIMIT_PER_MINUTE: ${STATUS_RATE_LIMIT_PER_MINUTE:-120}
   STATUS_SUBSCRIBE_PER_HOUR: ${STATUS_SUBSCRIBE_PER_HOUR:-10}
   STATUS_CACHE_SECONDS: ${STATUS_CACHE_SECONDS:-30}
   API_TOKEN_MAX_DAYS: ${API_TOKEN_MAX_DAYS:-365}
   WEBHOOK_ALLOW_PRIVATE_CIDRS: ${WEBHOOK_ALLOW_PRIVATE_CIDRS:-}
   IMPORT_ALLOW_PRIVATE_CIDRS: ${IMPORT_ALLOW_PRIVATE_CIDRS:-}
+  LINK_PREVIEW_ALLOW_PRIVATE_CIDRS: ${LINK_PREVIEW_ALLOW_PRIVATE_CIDRS:-}
   WEBHOOK_DISABLE_AFTER: ${WEBHOOK_DISABLE_AFTER:-10}
   AUTOMATION_MAX_RUNS_PER_HOUR: ${AUTOMATION_MAX_RUNS_PER_HOUR:-600}
   WEBHOOK_ENCRYPTION_KEY: ${WEBHOOK_ENCRYPTION_KEY:-}
@@ -69,6 +87,11 @@ x-server-env: &server-env # Every role except migrate connects as castra_app, wh
   MAIL_DIGEST_WINDOW_SECONDS: ${MAIL_DIGEST_WINDOW_SECONDS:-120}
   MAIL_MAX_ATTEMPTS: ${MAIL_MAX_ATTEMPTS:-6}
   MAIL_REPLY_DOMAIN: ${MAIL_REPLY_DOMAIN:-}
+  MAIL_OAUTH_MICROSOFT_CLIENT_ID: ${MAIL_OAUTH_MICROSOFT_CLIENT_ID:-}
+  MAIL_OAUTH_MICROSOFT_CLIENT_SECRET: ${MAIL_OAUTH_MICROSOFT_CLIENT_SECRET:-}
+  MAIL_OAUTH_MICROSOFT_TENANT: ${MAIL_OAUTH_MICROSOFT_TENANT:-common}
+  MAIL_OAUTH_GOOGLE_CLIENT_ID: ${MAIL_OAUTH_GOOGLE_CLIENT_ID:-}
+  MAIL_OAUTH_GOOGLE_CLIENT_SECRET: ${MAIL_OAUTH_GOOGLE_CLIENT_SECRET:-}
   MAIL_TOKEN_SECRET: ${MAIL_TOKEN_SECRET:-}
   MAIL_REPLY_TOKEN_DAYS: ${MAIL_REPLY_TOKEN_DAYS:-30}
   MAIL_IN_WEBHOOK_SECRET: ${MAIL_IN_WEBHOOK_SECRET:-}
@@ -91,7 +114,14 @@ x-server-env: &server-env # Every role except migrate connects as castra_app, wh
   S3_SECRET_KEY: ${S3_SECRET_KEY:-}
   S3_FORCE_PATH_STYLE: ${S3_FORCE_PATH_STYLE:-}
   ATTACHMENT_MAX_BYTES: ${ATTACHMENT_MAX_BYTES:-26214400}
-  DRAWIO_URL: ${DRAWIO_URL:-${CASTRA_DRAWIO_DOMAIN:+https://${CASTRA_DRAWIO_DOMAIN}}}
+  # Office previews: the converter's address (install.sh sets it with the previews profile). Empty: previews are off.
+  PREVIEW_URL: ${PREVIEW_URL:-}
+  PREVIEW_MAX_BYTES: ${PREVIEW_MAX_BYTES:-20971520}
+  PREVIEW_TIMEOUT_SECONDS: ${PREVIEW_TIMEOUT_SECONDS:-60}
+  PREVIEW_CONCURRENCY: ${PREVIEW_CONCURRENCY:-2}
+  DRAWIO_URL: ${DRAWIO_URL:-${CASTRA_DRAWIO_DOMAIN:+https://${CASTRA_DRAWIO_DOMAIN:-}}}
+  # The portal at the root of this host name, for the first organisation (see "The portal on its own host name").
+  CASTRA_PORTAL_DOMAIN: ${CASTRA_PORTAL_DOMAIN:-}
   LOG_LEVEL: ${LOG_LEVEL:-info}
 
 x-role: &role
@@ -202,6 +232,7 @@ services:
     networks:
       default:
         aliases: [api, collab, mail-in]
+      previews: {}
 
   web:
     image: ${CASTRA_IMAGE_WEB:-ghcr.io/castracloud/castra-web:${CASTRA_VERSION:?set CASTRA_VERSION in .env, for example 1.0.0}}
@@ -217,7 +248,10 @@ services:
       # Host form: Draw.io on its own host name on the same listener as Castra (plain http here; compose.tls.yml
       # sets the bare name). Empty: the port form above.
       CASTRA_DRAWIO_SUFFIX: ${CASTRA_DRAWIO_DOMAIN:+-host}
-      CASTRA_DRAWIO_SITE: ${CASTRA_DRAWIO_DOMAIN:+http://${CASTRA_DRAWIO_DOMAIN}}
+      CASTRA_DRAWIO_SITE: ${CASTRA_DRAWIO_DOMAIN:+http://${CASTRA_DRAWIO_DOMAIN:-}}
+      # The portal on its own host name, the same way (compose.tls.yml sets the bare name for https).
+      CASTRA_PORTAL_SUFFIX: ${CASTRA_PORTAL_DOMAIN:+-host}
+      CASTRA_PORTAL_SITE: ${CASTRA_PORTAL_DOMAIN:+http://${CASTRA_PORTAL_DOMAIN:-}}
       DRAWIO_UPSTREAM: drawio:8080
       API_UPSTREAM: api:8080
       COLLAB_UPSTREAM: collab:8080
@@ -258,6 +292,7 @@ services:
   preview:
     <<: *role
     environment: { <<: *server-env, CASTRA_ROLE: preview }
+    networks: [default, previews]
 
   # Draw.io, so diagrams in Caelus pages can be edited without the browser reaching the internet. The web
   # proxy serves it on CASTRA_DRAWIO_DOMAIN, or on CASTRA_DRAWIO_PORT when that is empty; install.sh sets DRAWIO_URL. It is the official
@@ -267,6 +302,37 @@ services:
     restart: unless-stopped
     environment:
       DRAWIO_SELF_CONTAINED: "1"
+
+  # Office previews: Gotenberg (MIT) turns Word, Excel, PowerPoint and OpenDocument files into PDF with
+  # LibreOffice. It is large (about 1.5 GB of image), so it has its own profile: add --profile previews, or
+  # use --profile full, which includes it; install.sh sets PREVIEW_URL=http://converter:3000. It sits on an
+  # internal network with no route out, so a document cannot make it fetch anything, and it publishes no port.
+  # The server also sends it nothing but the file; the options below close the routes that could fetch URLs.
+  converter:
+    image: gotenberg/gotenberg:9.4.1
+    profiles: [previews, full]
+    restart: unless-stopped
+    command:
+      - gotenberg
+      - --api-disable-download-from
+      - --webhook-disable
+      - --chromium-disable-routes
+      - --api-timeout=${PREVIEW_TIMEOUT_SECONDS:-60}s
+      - --api-body-limit=${PREVIEW_MAX_BYTES:-20971520}
+      - --libreoffice-restart-after=50
+    networks: [previews]
+    mem_limit: ${CASTRA_PREVIEW_MEMORY:-2g}
+    cpus: ${CASTRA_PREVIEW_CPUS:-2}
+    pids_limit: 512
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+    tmpfs: ["/tmp:size=1g"]
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS http://127.0.0.1:3000/health || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 10
+      start_period: 30s
 
   # The bundled identity provider, for installs without one: Keycloak in production mode, served by the
   # web proxy at <CASTRA_PUBLIC_URL>/idp, with its own database (keycloak) in the bundled Postgres.
@@ -329,6 +395,11 @@ services:
       timeout: 5s
       retries: 30
       start_period: 60s
+
+networks:
+  # No route out: the converter shares it with the services that send it files, nothing else.
+  previews:
+    internal: true
 
 volumes:
   postgres-data:

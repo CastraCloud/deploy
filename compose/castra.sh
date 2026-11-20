@@ -10,8 +10,8 @@
 #
 # .env settings read here (neither is passed to the containers):
 #   CASTRA_COMPOSE_FILES  files in this folder to add after compose.yml, space separated
-#                         (compose.tls.yml, compose.external-db.yml, compose.external-s3.yml, compose.external-valkey.yml, compose.external-drawio.yml)
-#   COMPOSE_PROFILES      profiles to start, comma separated (minimal or full, identity, nats)
+#                         (compose.tls.yml, compose.external-db.yml, compose.external-s3.yml, compose.external-valkey.yml, compose.external-drawio.yml, compose.external-previews.yml)
+#   COMPOSE_PROFILES      profiles to start, comma separated (minimal or full, identity, nats, previews)
 # Environment: ENV_FILE overrides the path of .env.
 set -euo pipefail
 

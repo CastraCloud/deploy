@@ -3,6 +3,7 @@
 {{- $tls := .Values.ingress.tls -}}
 {{- $host := required "ingress.host is required when the ingress is enabled" .Values.ingress.host -}}
 {{- $drawioHost := ternary .Values.drawio.host "" (eq .Values.drawio.mode "bundled") -}}
+{{- $portalHost := .Values.portal.host -}}
 {{- $secretName := "" -}}
 {{- if eq $tls.mode "existingSecret" -}}
 {{- $secretName = required "ingress.tls.secretName is required when ingress.tls.mode is existingSecret" $tls.secretName -}}
@@ -51,6 +52,9 @@ spec:
         {{- if $drawioHost }}
         - {{ $drawioHost | quote }}
         {{- end }}
+        {{- if $portalHost }}
+        - {{ $portalHost | quote }}
+        {{- end }}
       secretName: {{ $secretName }}
   {{- end }}
   rules:
@@ -75,5 +79,17 @@ spec:
                 name: {{ $full }}-web
                 port:
                   name: drawio
+    {{- end }}
+    {{- if $portalHost }}
+    - host: {{ $portalHost | quote }}
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: {{ $full }}-web
+                port:
+                  name: portal
     {{- end }}
 {{- end }}

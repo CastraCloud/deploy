@@ -27,21 +27,22 @@ Castra is free to self-host. Find out more at [castracloud.com](https://castracl
 
 ## What is here
 
-| Path                                      | What it is                                                                                          |
-| ----------------------------------------- | --------------------------------------------------------------------------------------------------- |
-| `install.sh`                              | The installer: checks the host, asks what it needs, makes the secrets, starts Castra.               |
-| `install.answers.example`                 | Every answer `install.sh` understands, for installs with no questions.                              |
-| `bundle.sh`, `load.sh`                    | Make an offline bundle on a machine with internet; load it on a host without.                       |
-| `compose/compose.yml`                     | The Docker Compose stack: Castra plus Postgres, Valkey, SeaweedFS (S3 storage) and Draw.io.         |
-| `compose/castra.sh`                       | Runs `docker compose` with the files and profiles chosen in `compose/.env`.                         |
-| `compose/compose.tls.yml`                 | Optional: HTTPS served by Castra's own web proxy.                                                   |
-| `compose/compose.external-*.yml`          | Optional: use your own Postgres, S3 bucket, Valkey or Redis, or Draw.io instead of the bundled one. |
-| `compose/.env.example`                    | Every setting, with comments. `install.sh` writes `compose/.env` from it.                           |
-| `compose/backup.sh`, `compose/restore.sh` | Instance backup and restore.                                                                        |
-| `compose/postgres/`                       | Database roles and the first-start scripts.                                                         |
-| `compose/identity/`                       | The realm for the bundled sign-in (`identity` profile), with no users.                              |
-| `helm/castra/`                            | The Helm chart for Kubernetes. See [Kubernetes](#kubernetes).                                       |
-| `UPGRADING.md`                            | How to upgrade, pin versions and roll back.                                                         |
+| Path                                      | What it is                                                                                                    |
+| ----------------------------------------- | ------------------------------------------------------------------------------------------------------------- |
+| `install.sh`                              | The installer: checks the host, asks what it needs, makes the secrets, starts Castra.                         |
+| `install.answers.example`                 | Every answer `install.sh` understands, for installs with no questions.                                        |
+| `bundle.sh`, `load.sh`                    | Make an offline bundle on a machine with internet; load it on a host without.                                 |
+| `compose/compose.yml`                     | The Docker Compose stack: Castra plus Postgres, Valkey, SeaweedFS (S3 storage) and Draw.io.                   |
+| `compose/castra.sh`                       | Runs `docker compose` with the files and profiles chosen in `compose/.env`.                                   |
+| `compose/compose.tls.yml`                 | Optional: HTTPS served by Castra's own web proxy.                                                             |
+| `compose/compose.external-*.yml`          | Optional: use your own Postgres, S3 bucket, Valkey or Redis, Draw.io or Gotenberg instead of the bundled one. |
+| `compose/.env.example`                    | Every setting, with comments. `install.sh` writes `compose/.env` from it.                                     |
+| `compose/backup.sh`, `compose/restore.sh` | Instance backup and restore.                                                                                  |
+| `compose/restore-drill.sh`                | Tests that a backup restores, on a throwaway stack (see Backups).                                             |
+| `compose/postgres/`                       | Database roles and the first-start scripts.                                                                   |
+| `compose/identity/`                       | The realm for the bundled sign-in (`identity` profile), with no users.                                        |
+| `helm/castra/`                            | The Helm chart for Kubernetes. See [Kubernetes](#kubernetes).                                                 |
+| `UPGRADING.md`                            | How to upgrade, pin versions and roll back.                                                                   |
 
 ## What you need
 
@@ -50,24 +51,25 @@ you (and how to swap it for your own), and what is optional.
 
 ### Required
 
-| What                                  | Notes                                                                                                                                                                  |
-| ------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| A Linux host with Docker              | Docker Engine and Docker Compose v2 (2.24 or newer if you use your own Postgres), on amd64 or arm64. A normal user in the `docker` group is enough; no root otherwise. |
-| A DNS name, and TLS for anything real | Passwords and sessions cross the network. Castra can get its own certificate (see [HTTPS](#https)), or sit behind your own TLS proxy. Plain http is for a trial only.  |
-| An OpenID Connect identity provider   | Bring your own (Keycloak, Microsoft Entra ID, Okta, Authentik, Google Workspace, any other) or run the bundled Keycloak. See [Sign-in](#sign-in).                      |
+| What                                  | Notes                                                                                                                                                                                                  |
+| ------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| A Linux host with Docker              | Docker Engine and Docker Compose v2 (2.24 or newer if you use your own Postgres), on amd64 or arm64. A normal user in the `docker` group is enough; no root otherwise.                                 |
+| A DNS name, and TLS for anything real | Passwords and sessions cross the network. Castra can get its own certificate (see [HTTPS](#https)), or sit behind your own TLS proxy. Plain http is for a trial only.                                  |
+| An identity provider                  | OpenID Connect: bring your own (Keycloak, Microsoft Entra ID, Okta, Authentik, Google Workspace, any other) or run the bundled Keycloak. SAML 2.0: ADFS, Entra ID and others. See [Sign-in](#sign-in). |
 
 ### Bundled, and replaceable
 
 These start with Castra and need nothing from you. Each can be replaced with a service you already run.
 
-| What                         | Bundled as             | Use your own instead                                                                                                           |
-| ---------------------------- | ---------------------- | ------------------------------------------------------------------------------------------------------------------------------ |
-| Postgres 17 or newer         | `postgres` service     | `compose/compose.external-db.yml`, `CASTRA_DB_*`. You create two roles with `postgres/roles.sql`; `install.sh` can do it.      |
-| Valkey (or Redis)            | `valkey` service       | `compose/compose.external-valkey.yml` and `VALKEY_URL`. Sessions and caches live there.                                        |
-| S3-compatible object storage | SeaweedFS, `seaweedfs` | `compose/compose.external-s3.yml` and `S3_*`. Create the bucket first. Attachments live there.                                 |
-| Draw.io, for diagram editing | `drawio` service       | `compose/compose.external-drawio.yml` and `DRAWIO_URL`. The bundled one needs no internet access from the browser.             |
-| NATS, an event transport     | only if you choose it  | Starts with `--profile nats`, and only matters with `CASTRA_EVENT_TRANSPORT=nats`. The default (`outbox`) uses Postgres alone. |
-| Keycloak, as the sign-in     | only if you choose it  | The `identity` profile. See [Sign-in](#sign-in).                                                                               |
+| What                         | Bundled as             | Use your own instead                                                                                                                                                        |
+| ---------------------------- | ---------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Postgres 17 or newer         | `postgres` service     | `compose/compose.external-db.yml`, `CASTRA_DB_*`. You create two roles with `postgres/roles.sql`; `install.sh` can do it.                                                   |
+| Valkey (or Redis)            | `valkey` service       | `compose/compose.external-valkey.yml` and `VALKEY_URL`. Sessions and caches live there.                                                                                     |
+| S3-compatible object storage | SeaweedFS, `seaweedfs` | `compose/compose.external-s3.yml` and `S3_*`. Create the bucket first. Attachments live there.                                                                              |
+| Draw.io, for diagram editing | `drawio` service       | `compose/compose.external-drawio.yml` and `DRAWIO_URL`. The bundled one needs no internet access from the browser.                                                          |
+| Office previews (Gotenberg)  | only if you choose it  | Starts with `--profile previews` (the `full` profile has it). Your own: `compose/compose.external-previews.yml` and `PREVIEW_URL`. See [Office previews](#office-previews). |
+| NATS, an event transport     | only if you choose it  | Starts with `--profile nats`, and only matters with `CASTRA_EVENT_TRANSPORT=nats`. The default (`outbox`) uses Postgres alone.                                              |
+| Keycloak, as the sign-in     | only if you choose it  | The `identity` profile. See [Sign-in](#sign-in).                                                                                                                            |
 
 ### Optional external pieces
 
@@ -152,8 +154,9 @@ Choose `minimal` or `full`. Postgres, Valkey, SeaweedFS, Draw.io, `migrate` and 
 | `full`     | one service per role (`api`, `collab`, `realtime`, `worker-jobs`, `worker-sla`, `mail-in`, `mail-out` and others) | scaling each role on its own                    |
 | `identity` | Keycloak in production mode, with its own database in the bundled Postgres                                        | installs with no identity provider of their own |
 | `nats`     | NATS (JetStream)                                                                                                  | only with `CASTRA_EVENT_TRANSPORT=nats`         |
+| `previews` | Gotenberg, the converter for Office previews (the `full` profile includes it)                                     | Word, Excel and PowerPoint previews             |
 
-`identity` and `nats` are added to `minimal` or `full`. Only `web` publishes ports: the app on
+`identity`, `nats` and `previews` are added to `minimal` or `full`. Only `web` publishes ports: the app on
 `CASTRA_HTTP_PORT` (and 443 with [HTTPS](#https)), and, in the port form only, Draw.io on `CASTRA_DRAWIO_PORT`
 (see [Diagrams](#diagrams)). It serves the agent
 app at `/`, the portal at `/portal/`, and passes `/api/*` to the API.
@@ -292,10 +295,86 @@ CASTRA_FRAME_SRC=https://castra.example.com:8081  # lets the page frame Castra a
 Behind your own TLS proxy, publish the Draw.io port over https and use that address. To use a Draw.io you
 already run, add `compose/compose.external-drawio.yml` and set both settings to its address.
 
+## Office previews
+
+Word, Excel, PowerPoint and OpenDocument attachments can open in the browser as a PDF. `install.sh` asks
+whether you want it (the default is no). The converter is Gotenberg (`gotenberg/gotenberg`, MIT licence,
+pinned to an exact version) with LibreOffice inside. The image is large, about 1.5 GB, and the service is
+limited to 2 GB of memory and 2 CPUs (`CASTRA_PREVIEW_MEMORY`, `CASTRA_PREVIEW_CPUS`), so it has a profile of its
+own and is off unless you ask for it.
+
+| You want              | Do this                                                                                                                                                                                                                                           |
+| --------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| The bundled converter | Answer `bundled` to the question, or add `previews` to `COMPOSE_PROFILES` and set `PREVIEW_URL=http://converter:3000` in `compose/.env`, then `compose/castra.sh up -d`. The `full` profile starts the service too, so set `PREVIEW_URL` as well. |
+| Your own Gotenberg    | Add `compose.external-previews.yml` to `CASTRA_COMPOSE_FILES` and set `PREVIEW_URL` to its address, reachable from the server only.                                                                                                               |
+| No previews           | Leave `PREVIEW_URL` empty. Office files then show "No preview available" and a Download original button.                                                                                                                                          |
+
+The server sends the converter nothing but the file. The bundled service has no published port and sits on
+an internal Docker network with no route out, and it runs with the routes that could fetch a URL or call back
+switched off (`--api-disable-download-from --webhook-disable --chromium-disable-routes`), so a document cannot
+make it reach anything. If you run your own, set the same options and keep it off the internet. Files over
+`PREVIEW_MAX_BYTES` (20 MB) are not converted, a conversion stops after `PREVIEW_TIMEOUT_SECONDS` (60), and
+`PREVIEW_CONCURRENCY` (2) run at once. A failed conversion is tried again after 1, 5, 25 and 125 minutes, then
+recorded, and the file shows "No preview available". Files uploaded before you switch previews on are converted
+too. See "Office previews" in the Castra README for what people see.
+
+## Sending desk email through Microsoft 365 or Google
+
+A service desk can send its customer email through a Microsoft 365 or Google Workspace mailbox with OAuth, instead
+of an SMTP password. Both providers are retiring password sign-in for SMTP. You register one OAuth app with each
+provider you want, and every desk can then connect a mailbox from Mercury, Settings, Outgoing email. Until you set
+a provider's details, its Connect button is hidden. Incoming mail stays forwarding only.
+
+Register the app with this redirect URI, where the first part is your `CASTRA_PUBLIC_URL`:
+
+```
+https://castra.example.com/api/v1/mail-oauth/callback
+```
+
+Then set these in `compose/.env` (or `email.oauth` in the Helm chart) and restart:
+
+| Setting                              | What it is                                                                                          |
+| ------------------------------------ | --------------------------------------------------------------------------------------------------- |
+| `MAIL_OAUTH_MICROSOFT_CLIENT_ID`     | The Application (client) ID of an app registered in Microsoft Entra ID.                             |
+| `MAIL_OAUTH_MICROSOFT_CLIENT_SECRET` | A client secret of that app. A secret: keep it in `.env` only.                                      |
+| `MAIL_OAUTH_MICROSOFT_TENANT`        | A tenant ID or domain to allow one organisation only. Default `common`: any work or school account. |
+| `MAIL_OAUTH_GOOGLE_CLIENT_ID`        | The client ID of a Web application OAuth client in Google Cloud.                                    |
+| `MAIL_OAUTH_GOOGLE_CLIENT_SECRET`    | Its client secret. A secret.                                                                        |
+
+For Microsoft 365 the app needs the delegated permission `SMTP.Send` of Office 365 Exchange Online, plus
+`offline_access`, `openid` and `email`, and SMTP AUTH must be allowed for the mailbox in Exchange Online. For Google
+the only scope is `https://mail.google.com/`, and an external consent screen should be published, because Google
+expires the tokens of apps left in Testing after seven days. Castra stores the connection encrypted and never sees the
+mailbox password.
+
+## The portal on its own host name
+
+By default the requester portal is at `/portal/` on Castra's address. It can also have a host name of its own, such
+as `help.example.com`, where it is served at the root. People there can sign in with an emailed link as well as with
+staff sign-in. The portal stays at `/portal/` too, so nothing changes for people who already use it. Set the name in
+`compose/.env`:
+
+```sh
+CASTRA_PORTAL_DOMAIN=help.example.com
+```
+
+Point the name's DNS record where Castra's points. The portal at that name belongs to your first organisation. The web
+proxy serves it on the same ports as Castra, told apart by the `Host` header, and every `CASTRA_TLS_MODE` covers the
+name: `off` serves it on `CASTRA_HTTP_PORT` (your proxy must serve the name over https and send it there with `Host`
+passed on), `self-signed` and `acme` get a certificate for it, and `files` needs one certificate that covers both names
+or `CASTRA_TLS_PORTAL_CERT` and `CASTRA_TLS_PORTAL_KEY` for a second pair. `install.sh` asks for the name (leave it
+empty to skip). A session made at one host name works only there, so a portal session is never valid on the agent app.
+
+Under Administration, Addresses you can add more names for an organisation (a name is used once it is verified with a
+DNS TXT record), and under Administration, Portal access you choose who may sign up: anyone, people from listed email
+domains (each can join a customer organisation) or invited people only. Customers who sign in this way have portal-only
+accounts and never hold staff roles. With Helm, set `portal.host`.
+
 ## Sign-in
 
-Castra signs people in through OpenID Connect only. Users are matched on issuer and subject, not on
-email. Castra asks for the scopes `openid profile email`, sends a PKCE challenge, and needs these
+Castra signs staff in through OpenID Connect or through SAML 2.0 (see [Sign in with SAML](#sign-in-with-saml)).
+An installation uses one or the other, and refuses to start with both set. Users are matched on issuer and
+subject, not on email. Castra asks for the scopes `openid profile email`, sends a PKCE challenge, and needs these
 from the provider:
 
 | Castra setting             | What to give it                                                                              |
@@ -309,6 +388,7 @@ from the provider:
 | `OIDC_GROUP_PREFIX_FILTER` | Comma-separated prefixes: import only matching groups.                                       |
 | `OIDC_REQUIRED_GROUPS`     | Comma-separated group names: sign-in needs at least one in the token. Empty allows everyone. |
 | `CASTRA_BOOTSTRAP_ADMINS`  | Usernames (the username claim) who become administrators of the first organisation.          |
+| `CASTRA_OPERATORS`         | Usernames who run the installation and may open the System page. Bootstrap admins may too.   |
 
 The Castra server itself (not only the browser) must be able to reach the issuer URL.
 
@@ -372,6 +452,75 @@ Each provider's steps, in short:
 - **Google Workspace.** In Google Cloud Console, Credentials, create an OAuth client ID of type Web
   application with the redirect URL above, and set `OIDC_USERNAME_CLAIM=email`. Restrict who may use it
   with the consent screen's internal user type.
+
+### Sign in with SAML
+
+Use SAML when your identity provider is ADFS or another SAML 2.0 provider and has no OpenID Connect.
+`install.sh` asks: choose "external", then "saml". By hand, leave every `OIDC_*` sign-in setting empty
+and set these in `compose/.env` (they are listed, commented, in `compose/.env.example`):
+
+| Castra setting                                                                        | What to give it                                                                                                                                    |
+| ------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `SAML_IDP_METADATA_URL`                                                               | The provider's metadata address. Or `SAML_IDP_METADATA_FILE`, a path inside the container (mount the file yourself). Set one of the two.           |
+| `SAML_IDP_ENTITY_ID`                                                                  | The `entityID` in that metadata. Accounts are recorded under it.                                                                                   |
+| `SAML_SP_ENTITY_ID`                                                                   | Castra's entity ID. Default `<CASTRA_PUBLIC_URL>/auth/saml`.                                                                                       |
+| `SAML_SP_SIGNING_KEY`, `SAML_SP_SIGNING_CERT`                                         | Optional, together: PEM text on one line with `\n` for line breaks, or a file path. Castra then signs sign-in requests and its metadata.           |
+| `SAML_ATTR_USERNAME`, `SAML_ATTR_EMAIL`, `SAML_ATTR_DISPLAY_NAME`, `SAML_ATTR_GROUPS` | Attribute names, comma-separated, first found is used. The defaults suit ADFS and Entra ID, so leave them empty unless your rules use other names. |
+| `SAML_ATTR_SUBJECT`                                                                   | An attribute that never changes for a person. Empty: the NameID, which must not be transient.                                                      |
+| `SAML_EMAIL_VERIFIED`                                                                 | `true` (default) or `false`: whether the mail attribute may join a directory account.                                                              |
+| `OIDC_GROUP_PREFIX_FILTER`, `OIDC_REQUIRED_GROUPS`, `CASTRA_BOOTSTRAP_ADMINS`         | Work as for OIDC. Administrators are named by the username attribute (for ADFS, usually `user@domain`).                                            |
+
+The identity provider needs two things from Castra, both at your public address: the metadata at
+`<CASTRA_PUBLIC_URL>/auth/saml/metadata`, or by hand the entity ID and the assertion consumer service
+`<CASTRA_PUBLIC_URL>/auth/saml/acs` (HTTP-POST binding). Castra needs a **signed** assertion or response,
+a persistent or stable NameID (or `SAML_ATTR_SUBJECT`), the username attribute, and the groups attribute if you
+use groups. Leave assertion encryption off. Start sign-in at Castra: sign-in begun at the provider's own portal is
+refused. Single logout is not supported: signing out ends the Castra session only.
+
+**ADFS.** The ADFS and Entra ID steps here follow the products' documentation and are checked against signed test
+assertions only, not against a live ADFS or Entra ID tenant, so try them on a spare install first.
+
+1. In AD FS Management, Relying Party Trusts, Add Relying Party Trust, Claims aware. Choose "Import data about the
+   relying party published online" and enter `https://castra.example.com/auth/saml/metadata`. (If ADFS cannot reach
+   Castra, download that file and import it instead.) Name it Castra.
+2. Set `SAML_IDP_METADATA_URL=https://<adfs-host>/FederationMetadata/2007-06/FederationMetadata.xml` and
+   `SAML_IDP_ENTITY_ID=http://<adfs-host>/adfs/services/trust` (the `entityID` at the top of that file; the one shown
+   under AD FS, Service, Edit Federation Service Properties, Federation Service identifier).
+3. Edit Claim Issuance Policy, Add Rule, "Send LDAP Attributes as Claims", store Active Directory:
+   User-Principal-Name to `UPN`, E-Mail-Addresses to `E-Mail Address`, Display-Name to `Common Name` and
+   Token-Groups - Unqualified Names to `Group`. These ADFS outgoing claim types have the default names Castra tries.
+   Groups arrive as plain names; use Token-Groups - Qualified by domain name if you want `DOMAIN\group`, and then
+   write `OIDC_REQUIRED_GROUPS` the same way.
+4. Add Rule, "Transform an Incoming Claim": incoming type a stable one such as Primary SID or Windows account name,
+   outgoing type Name ID, format Persistent Identifier. This is the subject Castra keys the account on.
+   (Or set `SAML_ATTR_SUBJECT` to an attribute you send.)
+5. On the trust's Advanced tab choose SHA-256. ADFS signs the assertion by default. If the trust demands signed
+   requests, set `SAML_SP_SIGNING_KEY` and `SAML_SP_SIGNING_CERT` and add that certificate on the trust's
+   Signature tab.
+
+**Microsoft Entra ID.** Enterprise applications, New application, Create your own application, "Integrate any other
+application you don't find in the gallery". Then Single sign-on, SAML:
+
+1. Upload `https://castra.example.com/auth/saml/metadata` (as a file) under "Upload metadata file", or set the
+   Identifier (Entity ID) to the `SAML_SP_ENTITY_ID` (default `https://castra.example.com/auth/saml`) and the Reply
+   URL to `https://castra.example.com/auth/saml/acs`.
+2. Attributes and claims: the defaults send `.../claims/name` (the user principal name), `.../emailaddress`,
+   `givenname` and `surname`, which Castra's defaults read. Add a claim named
+   `http://schemas.microsoft.com/identity/claims/displayname` from `user.displayname`. Entra's NameID is the user
+   principal name by default, which changes when a person is renamed: add a claim from `user.objectid` named
+   `http://schemas.microsoft.com/identity/claims/objectidentifier` and set `SAML_ATTR_SUBJECT` to that name.
+3. For groups, Add a group claim. Entra sends group object IDs unless the source attribute is changed (for groups synced
+   from Active Directory, "sAMAccountName"), and "Groups assigned to the application" keeps the list short.
+   `OIDC_REQUIRED_GROUPS` then lists those values.
+4. Copy "App Federation Metadata Url" to `SAML_IDP_METADATA_URL`, and "Microsoft Entra Identifier"
+   (`https://sts.windows.net/<tenant-id>/`) to `SAML_IDP_ENTITY_ID`. Assign the people or groups who may use the app.
+5. Entra signs the assertion with a certificate it renews. Castra reads the certificates from the metadata, which it
+   fetches again at most once an hour, so a renewal needs no change here.
+
+If sign-in is refused, the reason is in the server log (`compose/castra.sh logs app`): a wrong audience means the entity
+ID differs on the two sides, a wrong recipient or destination means the address differs, and "Invalid signature" means
+the provider signs with a certificate its metadata does not list or with nothing at all. A clock more than a minute
+out on either machine shows as an assertion that is not yet valid or already expired.
 
 ## Kubernetes
 
@@ -478,6 +627,27 @@ them up with their own tools (`BACKUP_OBJECTS=none` skips the object copy).
 Back up at least daily and before every upgrade, keep several, keep a copy off the host, and do a
 restore drill on a spare machine every few months.
 
+### Restore drill
+
+Before you trust the backups, run `compose/restore-drill.sh IMAGE_TAG` (the tag of the images you
+run, for example `1.0.0`). It starts a separate throwaway stack under its own Compose project name
+(`castra-drill-<random>`, no published ports, so it can run beside your real one), loads demo data
+with attachments, takes a backup with `backup.sh`, destroys that throwaway stack and its volumes,
+restores it with `restore.sh`, starts it and compares row counts, attachment checksums, the audit
+chain and a Caelus page and ticket. It prints PASS, or FAIL with what differed, and cleans up after
+itself. It never touches your real stack: it only removes containers and volumes labelled with its
+own project name, and it refuses to start if that name is already in use.
+
+```sh
+compose/restore-drill.sh --plan 1.0.0   # show the steps, run nothing
+compose/restore-drill.sh 1.0.0
+```
+
+It needs Docker with Compose v2.20 or later and a few GB of free disk. It uses the images you name
+(`CASTRA_IMAGE_SERVER` and `CASTRA_IMAGE_WEB` work too) and builds nothing. It tests the bundled
+Postgres and SeaweedFS with the default `BACKUP_OBJECTS=volume`; it does not test `rclone`, your own
+database or bucket, or your `compose/.env`.
+
 ## Upgrading
 
 See [UPGRADING.md](UPGRADING.md): back up first, set the new image tags, pull, start. Migrations run
@@ -509,5 +679,5 @@ are licensed under the [Apache License 2.0](LICENSE): copy and change them for y
 
 Castra itself, the software in the `castra-server` and `castra-web` images, is not open source. It
 is free to install and use for your own organisation under the [Castra Licence](LICENSE-castra.md),
-which among other things does not allow offering Castra to others as a hosted service. The open
+which among other things does not allow offering Castra to others as a hosted service. You accept it in two places: `install.sh` asks you to type `yes` (or set `ACCEPT_LICENCE=yes` in the answers file, or pass `--accept-licence`) before it writes anything, and the first administrator to sign in to Castra is asked to accept it in the app, because until they do nobody can use it. The text is in the images as `/LICENSE` and is shown in the app under Administration, Licence. The open
 source components inside the images keep their own licences, listed in each image's SBOM.

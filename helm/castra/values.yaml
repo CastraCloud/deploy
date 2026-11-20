@@ -228,6 +228,34 @@ signIn:
     groupPrefixFilter: ""
     # Comma-separated group names: only people with one in the groups claim can sign in. Empty allows everyone.
     requiredGroups: ""
+  # SAML 2.0 instead of OIDC (ADFS, Entra ID, another identity provider). Use one or the other: the chart
+  # refuses both. Set idpEntityId and one of idpMetadataUrl or idpMetadataFile. Give your provider
+  # <publicUrl>/auth/saml/metadata (or the entity ID and <publicUrl>/auth/saml/acs, HTTP-POST binding).
+  # signIn.oidc.groupPrefixFilter and requiredGroups apply to SAML too. Single logout is not supported.
+  saml:
+    # The provider's entityID from its metadata. It becomes the issuer of the accounts.
+    idpEntityId: ""
+    idpMetadataUrl: ""
+    # A path inside the pod; mount the file with extraVolumes and extraVolumeMounts.
+    idpMetadataFile: ""
+    # Empty means <publicUrl>/auth/saml.
+    spEntityId: ""
+    # Optional: sign sign-in requests and the metadata. The key is a secret, the certificate is PEM text.
+    signingKey:
+      existingSecret: ""
+      key: saml-signing-key
+      value: ""
+    signingCert: ""
+    # Attribute names, comma-separated, first one found is used. Empty keeps the ADFS and Entra ID defaults.
+    attributes:
+      username: ""
+      email: ""
+      displayName: ""
+      groups: ""
+      # Identifies a person for good. Empty: the NameID, which must not be transient.
+      subject: ""
+    # "false": the mail attribute never joins accounts by address. Empty means true.
+    emailVerified: ""
   # At least 32 random characters. Also the default key for webhook secrets and reply tokens.
   session:
     secret:
@@ -247,8 +275,19 @@ signIn:
     admins: ""
     # same_issuer: anyone who signs in through the issuer joins as a member. invite_only: admins add people by username.
     joinPolicy: same_issuer
+  # Comma-separated usernames who run the installation and may open the System page. Bootstrap admins may too.
+  operators: ""
   # Send Strict-Transport-Security from the API ("true"). Only when the site is served over https.
   hsts: ""
+
+# ---------------------------------------------------------------------------------------------------------------------
+# Licence
+# ---------------------------------------------------------------------------------------------------------------------
+
+licence:
+  # required: an administrator accepts the Castra Licence in the app before anyone can use Castra.
+  # off: only for an installation that is covered by other terms, such as the hosted service.
+  acceptance: required
 
 # ---------------------------------------------------------------------------------------------------------------------
 # Email
@@ -267,6 +306,24 @@ email:
     from: ""
     # starttls, tls or none
     tls: starttls
+  # Desks can send customer mail through a Microsoft 365 or Google Workspace mailbox with OAuth. Register an app
+  # with each provider (see the README) using the redirect URI <public URL>/api/v1/mail-oauth/callback.
+  # With a provider's client id empty, its option is hidden.
+  oauth:
+    microsoft:
+      clientId: ""
+      clientSecret:
+        existingSecret: ""
+        key: mail-oauth-microsoft-client-secret
+        value: ""
+      # A tenant id or domain, or common, organizations, consumers.
+      tenant: common
+    google:
+      clientId: ""
+      clientSecret:
+        existingSecret: ""
+        key: mail-oauth-google-client-secret
+        value: ""
   # Changes to one thing within this many seconds go out as a single email.
   digestWindowSeconds: 120
   # Attempts before an email is given up on.
@@ -346,6 +403,8 @@ limits:
   automationMaxRunsPerHour: 600
   # Most rows in a search results export. Larger result sets are cut and the file says so.
   searchExportMaxRows: 5000
+  # Longest one database query may run on the API, in milliseconds (0 = no limit).
+  dbStatementTimeoutMs: 30000
 
 webhooks:
   # Outgoing webhooks: private ranges they may reach (comma-separated CIDRs; empty = none).
@@ -361,6 +420,11 @@ webhooks:
 imports:
   # Importers (Jira, Redmine and so on): private ranges they may reach, comma-separated CIDRs. Plain http is only
   # accepted inside these ranges. Empty = only public hosts.
+  allowPrivateCidrs: ""
+
+linkPreviews:
+  # Private ranges link previews may fetch from, comma-separated CIDRs (a link someone pastes is fetched by the
+  # server). Empty = none. Separate from webhooks.allowPrivateCidrs.
   allowPrivateCidrs: ""
 
 # Other limits Castra reads, all optional (empty uses Castra's own default). Retention of tickets, versions and audit
@@ -496,6 +560,34 @@ valkey:
       value: ""
 
 # ---------------------------------------------------------------------------------------------------------------------
+# Office previews: Word, Excel, PowerPoint and OpenDocument attachments shown as PDF
+# ---------------------------------------------------------------------------------------------------------------------
+
+previews:
+  # none: off. bundled: Gotenberg (MIT) in its own Deployment, a large image that needs about 2 GB of memory; nothing
+  # outside the release can reach it and it can reach nothing. external: a Gotenberg you run, at external.url, which
+  # only Castra should reach. In full mode the "preview" role must be enabled (roles.preview).
+  mode: none
+  # Files above this are not converted (bytes), one conversion may take this long, and this many run at once.
+  maxBytes: 20971520
+  timeoutSeconds: 60
+  concurrency: 2
+  bundled:
+    image: gotenberg/gotenberg:9.4.1
+    # Blocks every connection out of the converter and every one in except from the server (needs a network plugin
+    # that enforces NetworkPolicy).
+    networkPolicy: true
+    resources:
+      requests:
+        cpu: 200m
+        memory: 512Mi
+      limits:
+        memory: 2Gi
+  external:
+    # For example http://gotenberg.internal:3000. It holds no password: keep it on a private network.
+    url: ""
+
+# ---------------------------------------------------------------------------------------------------------------------
 # S3-compatible object storage: attachments
 # ---------------------------------------------------------------------------------------------------------------------
 
@@ -547,6 +639,16 @@ storage:
         drop: [ALL]
       seccompProfile:
         type: RuntimeDefault
+
+# ---------------------------------------------------------------------------------------------------------------------
+# Portal on its own host name
+# ---------------------------------------------------------------------------------------------------------------------
+
+portal:
+  # The host that serves the requester portal at its root, for the first organisation (for example help.example.com).
+  # It needs its own DNS name and certificate, and is added to the Ingress. With a Gateway, route it with
+  # gateway.portalHostnames. The portal stays at /portal/ on the main address too. Empty: no portal host.
+  host: ""
 
 # ---------------------------------------------------------------------------------------------------------------------
 # Draw.io: diagram editing in Caelus pages
@@ -653,6 +755,8 @@ gateway:
   #   namespace: gateway-system
   hostnames: []
   drawioHostnames: []
+  # Host names routed to the portal (default: portal.host when it is set).
+  portalHostnames: []
   # Passed to each rule, for example request: 3600s so live editing is not cut off (Gateway API v1.1).
   timeouts: {}
 

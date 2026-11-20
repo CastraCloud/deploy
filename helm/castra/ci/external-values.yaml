@@ -71,5 +71,11 @@ gateway:
       namespace: gateway-system
   hostnames:
     - castra.example.com
+  portalHostnames:
+    - help.example.com
   timeouts:
     request: 3600s
+previews:
+  mode: external
+  external:
+    url: http://gotenberg.internal:3000
